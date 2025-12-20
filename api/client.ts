@@ -1,0 +1,125 @@
+/**
+ * API client for HyunJangTong 2.0
+ */
+
+import type {
+  Site,
+  Partner,
+  DashboardResponse,
+  SeniorWorker,
+  Accident,
+  AttendanceWorkersResponse,
+  RiskSummaryResponse,
+  RiskDocument,
+  RiskItem,
+  TbmSummaryResponse,
+  TbmLog,
+  TbmParticipant
+} from './types';
+
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+
+/**
+ * Generic fetch wrapper with error handling
+ */
+async function fetchApi<T>(
+  endpoint: string,
+  params?: Record<string, string | number | undefined>
+): Promise<T> {
+  const url = new URL(`${API_BASE}${endpoint}`);
+
+  if (params) {
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) {
+        url.searchParams.append(key, String(value));
+      }
+    });
+  }
+
+  const response = await fetch(url.toString());
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`API Error ${response.status}: ${errorText}`);
+  }
+
+  return response.json();
+}
+
+// Master data API
+export const masterApi = {
+  getSites: () => fetchApi<Site[]>('/sites'),
+  getSite: (id: number) => fetchApi<Site>(`/sites/${id}`),
+  getPartners: () => fetchApi<Partner[]>('/partners'),
+  getPartner: (id: number) => fetchApi<Partner>(`/partners/${id}`),
+};
+
+// Dashboard API
+export const dashboardApi = {
+  getSummary: (siteId: number | null, date: string, period: string) =>
+    fetchApi<DashboardResponse>('/dashboard/summary', {
+      site_id: siteId ?? undefined,
+      date,
+      period
+    }),
+
+  getSeniors: (siteId: number | null, date: string) =>
+    fetchApi<SeniorWorker[]>('/dashboard/seniors', {
+      site_id: siteId ?? undefined,
+      date
+    }),
+
+  getAccidents: (siteId: number | null, date: string, period: string) =>
+    fetchApi<Accident[]>('/dashboard/accidents', {
+      site_id: siteId ?? undefined,
+      date,
+      period
+    }),
+
+  getAttendanceWorkers: (siteId: number, date: string, period: string, partnerId?: number) =>
+    fetchApi<AttendanceWorkersResponse>('/dashboard/attendance/workers', {
+      site_id: siteId,
+      date,
+      period,
+      partner_id: partnerId
+    }),
+};
+
+// Risk Assessment API - consolidated under /dashboard/risk
+export const riskApi = {
+  getSummary: (siteId: number | null, date: string, period: string) =>
+    fetchApi<RiskSummaryResponse>('/dashboard/risk', {
+      site_id: siteId ?? undefined,
+      date,
+      period
+    }),
+
+  getDocuments: (siteId: number | null, date: string, period: string) =>
+    fetchApi<RiskDocument[]>('/risk/documents', {
+      site_id: siteId ?? undefined,
+      date,
+      period
+    }),
+
+  getItems: (docId: number) =>
+    fetchApi<RiskItem[]>(`/risk/items/${docId}`),
+};
+
+// TBM API - consolidated under /dashboard/tbm
+export const tbmApi = {
+  getSummary: (siteId: number | null, date: string, period: string) =>
+    fetchApi<TbmSummaryResponse>('/dashboard/tbm', {
+      site_id: siteId ?? undefined,
+      date,
+      period
+    }),
+
+  getLogs: (siteId: number | null, date: string) =>
+    fetchApi<TbmLog[]>('/tbm/logs', {
+      site_id: siteId ?? undefined,
+      date
+    }),
+
+  getParticipants: (tbmId: number) =>
+    fetchApi<TbmParticipant[]>(`/tbm/participants/${tbmId}`),
+};

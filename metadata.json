@@ -1,0 +1,5 @@
+{
+  "name": "현장통 2.0 안전 대시보드 [통합]",
+  "description": "A comprehensive industrial safety management dashboard featuring hierarchical site data, real-time risk tracking, and performance analytics with daily, weekly, and monthly views.",
+  "requestFramePermissions": []
+}
