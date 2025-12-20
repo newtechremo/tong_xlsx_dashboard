@@ -202,3 +202,95 @@ def get_tbm_participants(tbm_id: int) -> List[TbmParticipant]:
 
     finally:
         conn.close()
+
+
+def get_tbm_unconfirmed(
+    site_id: int,
+    date_str: str,
+    period: str,
+    partner_id: Optional[int] = None
+) -> dict:
+    """
+    🥚 Easter Egg: TBM 미확인자 조회
+    출근했지만 TBM에 참석하지 않은 근로자 목록
+    """
+    start_date, end_date = get_date_range(date_str, period)
+
+    conn = sqlite3.connect(str(DATABASE_PATH))
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+
+    try:
+        # 1. 출근자 목록 조회
+        if partner_id:
+            att_query = """
+                SELECT DISTINCT a.worker_name, a.role, p.name as partner_name, a.work_date
+                FROM attendance_logs a
+                JOIN partners p ON a.partner_id = p.id
+                WHERE a.site_id = ? AND a.partner_id = ?
+                  AND a.work_date BETWEEN ? AND ?
+            """
+            cursor.execute(att_query, (site_id, partner_id, start_date.isoformat(), end_date.isoformat()))
+        else:
+            att_query = """
+                SELECT DISTINCT a.worker_name, a.role, p.name as partner_name, a.work_date
+                FROM attendance_logs a
+                JOIN partners p ON a.partner_id = p.id
+                WHERE a.site_id = ?
+                  AND a.work_date BETWEEN ? AND ?
+            """
+            cursor.execute(att_query, (site_id, start_date.isoformat(), end_date.isoformat()))
+
+        attendance_workers = cursor.fetchall()
+
+        # 2. TBM 참석자 목록 조회
+        if partner_id:
+            tbm_query = """
+                SELECT DISTINCT tp.worker_name
+                FROM tbm_participants tp
+                JOIN tbm_logs t ON tp.tbm_id = t.id
+                WHERE t.site_id = ? AND t.partner_id = ?
+                  AND t.work_date BETWEEN ? AND ?
+            """
+            cursor.execute(tbm_query, (site_id, partner_id, start_date.isoformat(), end_date.isoformat()))
+        else:
+            tbm_query = """
+                SELECT DISTINCT tp.worker_name
+                FROM tbm_participants tp
+                JOIN tbm_logs t ON tp.tbm_id = t.id
+                WHERE t.site_id = ?
+                  AND t.work_date BETWEEN ? AND ?
+            """
+            cursor.execute(tbm_query, (site_id, start_date.isoformat(), end_date.isoformat()))
+
+        tbm_participants_set = {row["worker_name"] for row in cursor.fetchall()}
+
+        # 3. 미확인자 = 출근자 - TBM 참석자
+        unconfirmed = []
+        for worker in attendance_workers:
+            if worker["worker_name"] not in tbm_participants_set:
+                unconfirmed.append({
+                    "worker_name": worker["worker_name"],
+                    "role": worker["role"],
+                    "partner_name": worker["partner_name"],
+                    "work_date": worker["work_date"]
+                })
+
+        # 현장명 조회
+        cursor.execute("SELECT name FROM sites WHERE id = ?", (site_id,))
+        site_result = cursor.fetchone()
+        site_name = site_result["name"] if site_result else "Unknown"
+
+        return {
+            "site_id": site_id,
+            "site_name": site_name,
+            "date": date_str,
+            "period": period,
+            "total_attendance": len(attendance_workers),
+            "tbm_confirmed": len(tbm_participants_set),
+            "unconfirmed_count": len(unconfirmed),
+            "unconfirmed_workers": unconfirmed
+        }
+
+    finally:
+        conn.close()

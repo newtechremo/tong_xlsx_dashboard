@@ -7,12 +7,14 @@ import {
   Info,
   Building2,
   FileText,
-  ListFilter
+  ListFilter,
+  X,
+  AlertTriangle
 } from 'lucide-react';
 import { TimePeriod, Site } from '../types';
 import { mockTbmData, mockAttendanceData, MOCK_SITES } from '../mockData';
 import { tbmApi } from '../api/client';
-import type { TbmSummaryResponse } from '../api/types';
+import type { TbmSummaryResponse, TbmUnconfirmedResponse } from '../api/types';
 import LoadingSpinner from './LoadingSpinner';
 import ErrorMessage from './ErrorMessage';
 import NoDataMessage from './NoDataMessage';
@@ -37,6 +39,34 @@ const TbmMonitoringView: React.FC<TbmMonitoringViewProps> = ({ period, selectedD
   const [apiData, setApiData] = useState<TbmSummaryResponse | null>(null);
   const [apiLoading, setApiLoading] = useState(USE_API);
   const [apiError, setApiError] = useState<string | null>(null);
+
+  // 🥚 Easter Egg: 미확인자 팝업 state
+  const [unconfirmedData, setUnconfirmedData] = useState<TbmUnconfirmedResponse | null>(null);
+  const [unconfirmedLoading, setUnconfirmedLoading] = useState(false);
+  const [isUnconfirmedModalOpen, setIsUnconfirmedModalOpen] = useState(false);
+
+  // 🥚 Easter Egg: 참여율 클릭 핸들러
+  const handleRateClick = (siteId: string, partnerId?: string) => {
+    if (!USE_API) return;
+
+    const numSiteId = parseInt(siteId, 10);
+    if (isNaN(numSiteId)) return;
+
+    setUnconfirmedLoading(true);
+    setIsUnconfirmedModalOpen(true);
+
+    const numPartnerId = partnerId ? parseInt(partnerId, 10) : undefined;
+
+    tbmApi.getUnconfirmed(numSiteId, selectedDate, period, isNaN(numPartnerId as number) ? undefined : numPartnerId)
+      .then((data) => {
+        setUnconfirmedData(data);
+        setUnconfirmedLoading(false);
+      })
+      .catch((err) => {
+        console.error('TBM Unconfirmed API error:', err);
+        setUnconfirmedLoading(false);
+      });
+  };
 
   // Fetch data from API
   useEffect(() => {
@@ -296,13 +326,25 @@ const TbmMonitoringView: React.FC<TbmMonitoringViewProps> = ({ period, selectedD
                   <td className="px-6 py-5 text-center font-black text-slate-700 border-r border-gray-50">
                     {row.attendees > 0 ? `${row.attendees}명` : '-'}
                   </td>
-                  <td className="px-8 py-5 text-right">
+                  <td
+                    className="px-8 py-5 text-right cursor-pointer hover:bg-orange-50 transition-colors"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      // 🥚 Easter Egg: 참여율 클릭 시 미확인자 팝업
+                      if (isAllSites && row.originalSite) {
+                        handleRateClick(row.originalSite.id);
+                      } else if (!isAllSites) {
+                        handleRateClick(selectedSite.id, row.id);
+                      }
+                    }}
+                    title="🥚 클릭하여 TBM 미확인자 확인"
+                  >
                     <div className="flex flex-col items-end">
                       <span className={`text-xl font-black tracking-tighter ${parseFloat(row.rate) < 70 ? 'text-orange-600' : 'text-slate-800'}`}>
                         {row.rate}%
                       </span>
                       <div className="w-20 bg-gray-100 h-1 rounded-full overflow-hidden mt-1">
-                        <div 
+                        <div
                           className={`h-full rounded-full ${parseFloat(row.rate) < 70 ? 'bg-orange-500' : 'bg-blue-500'}`}
                           style={{width: `${row.rate}%`}}
                         ></div>
@@ -315,6 +357,79 @@ const TbmMonitoringView: React.FC<TbmMonitoringViewProps> = ({ period, selectedD
           </table>
         </div>
       </div>
+
+      {/* 🥚 Easter Egg: TBM 미확인자 팝업 */}
+      {isUnconfirmedModalOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh] overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-orange-50 to-red-50 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-orange-100 rounded-lg">
+                  <AlertTriangle size={20} className="text-orange-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-black text-slate-800">🥚 TBM 미확인자 명단</h3>
+                  {unconfirmedData && (
+                    <p className="text-sm text-slate-500">
+                      {unconfirmedData.site_name} · 출근 {unconfirmedData.total_attendance}명 중 {unconfirmedData.unconfirmed_count}명 미확인
+                    </p>
+                  )}
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setIsUnconfirmedModalOpen(false);
+                  setUnconfirmedData(null);
+                }}
+                className="p-2 hover:bg-gray-200 rounded-lg transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div className="overflow-auto max-h-[60vh]">
+              {unconfirmedLoading ? (
+                <div className="p-8 text-center text-slate-500">
+                  <div className="animate-spin w-8 h-8 border-2 border-orange-300 border-t-orange-600 rounded-full mx-auto mb-4"></div>
+                  미확인자를 찾는 중...
+                </div>
+              ) : unconfirmedData && unconfirmedData.unconfirmed_workers.length > 0 ? (
+                <table className="w-full text-sm">
+                  <thead className="bg-orange-50 sticky top-0">
+                    <tr className="text-slate-600 font-bold">
+                      <th className="px-4 py-3 text-left">날짜</th>
+                      <th className="px-4 py-3 text-left">이름</th>
+                      <th className="px-4 py-3 text-center">구분</th>
+                      <th className="px-4 py-3 text-left">소속</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {unconfirmedData.unconfirmed_workers.map((worker, idx) => (
+                      <tr key={idx} className="hover:bg-orange-50/50">
+                        <td className="px-4 py-3 text-slate-600">{worker.work_date}</td>
+                        <td className="px-4 py-3 font-bold text-orange-700">{worker.worker_name}</td>
+                        <td className="px-4 py-3 text-center">
+                          <span className={`px-2 py-1 rounded text-xs font-bold ${
+                            worker.role === '관리자' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
+                          }`}>
+                            {worker.role}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-slate-600">{worker.partner_name}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <div className="p-8 text-center">
+                  <div className="text-5xl mb-4">🎉</div>
+                  <p className="text-green-600 font-bold text-lg">모든 출근자가 TBM에 참석했습니다!</p>
+                  <p className="text-slate-400 text-sm mt-2">미확인자가 없습니다</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

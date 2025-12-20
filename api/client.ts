@@ -14,7 +14,8 @@ import type {
   RiskItem,
   TbmSummaryResponse,
   TbmLog,
-  TbmParticipant
+  TbmParticipant,
+  TbmUnconfirmedResponse
 } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
@@ -122,4 +123,13 @@ export const tbmApi = {
 
   getParticipants: (tbmId: number) =>
     fetchApi<TbmParticipant[]>(`/tbm/participants/${tbmId}`),
+
+  // 🥚 Easter Egg: TBM 미확인자 조회
+  getUnconfirmed: (siteId: number, date: string, period: string, partnerId?: number) =>
+    fetchApi<TbmUnconfirmedResponse>('/tbm/unconfirmed', {
+      site_id: siteId,
+      date,
+      period,
+      partner_id: partnerId
+    }),
 };

@@ -169,3 +169,22 @@ export interface TbmParticipant {
   id: number;
   worker_name: string;
 }
+
+// 🥚 Easter Egg: TBM 미확인자
+export interface TbmUnconfirmedWorker {
+  worker_name: string;
+  role: string;
+  partner_name: string;
+  work_date: string;
+}
+
+export interface TbmUnconfirmedResponse {
+  site_id: number;
+  site_name: string;
+  date: string;
+  period: string;
+  total_attendance: number;
+  tbm_confirmed: number;
+  unconfirmed_count: number;
+  unconfirmed_workers: TbmUnconfirmedWorker[];
+}
