@@ -129,13 +129,14 @@ class RiskAssessmentParser(BaseExcelParser):
     def _find_action_column(self) -> int:
         """Find the column containing action results."""
         for row in range(1, min(10, self.worksheet.max_row + 1)):
-            for col in range(1, min(30, self.worksheet.max_column + 1)):
+            for col in range(1, min(50, self.worksheet.max_column + 1)):
                 value = self.get_cell_value(row, col)
                 if value and isinstance(value, str):
                     text = value.strip()
-                    if "조치" in text or "이행" in text:
+                    # "개선대책" is the common header for action results
+                    if "개선" in text or "조치" in text or "이행" in text:
                         return col
-        return 15  # Default
+        return 24  # Default for 최초 type
 
     def extract_data_rows(self) -> List[Dict[str, Any]]:
         """Extract risk assessment items from the worksheet."""

@@ -331,9 +331,11 @@ const TbmMonitoringView: React.FC<TbmMonitoringViewProps> = ({ period, selectedD
                     onClick={(e) => {
                       e.stopPropagation();
                       // 🥚 Easter Egg: 참여율 클릭 시 미확인자 팝업
-                      if (isAllSites && row.originalSite) {
-                        handleRateClick(row.originalSite.id);
-                      } else if (!isAllSites) {
+                      if (isAllSites) {
+                        // 전체 현장 뷰: row.id가 site_id
+                        handleRateClick(row.id);
+                      } else {
+                        // 특정 현장 뷰: selectedSite.id가 site_id, row.id가 partner_id
                         handleRateClick(selectedSite.id, row.id);
                       }
                     }}
