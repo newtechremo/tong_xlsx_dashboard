@@ -133,6 +133,33 @@ export interface RiskItem {
   action_result: string | null;
 }
 
+// 일간 필터용 위험성평가 타입 (문서 타입별 통계)
+export interface RiskDocTypeStats {
+  doc_type: string;  // 최초, 수시, 정기
+  doc_count: number;
+  risk_count: number;
+  measure_count: number;
+  action_count: number;
+  confirm_count: number;
+}
+
+export interface RiskCompanyRow {
+  id: string;
+  label: string;
+  doc_types: RiskDocTypeStats[];
+  total_doc_count: number;
+  total_risk_count: number;
+  total_measure_count: number;
+  total_action_count: number;
+  total_confirm_count: number;
+}
+
+export interface RiskDailyResponse {
+  summary: RiskSummary;
+  rows: RiskCompanyRow[];
+  chart_data: RiskChartData[];  // 수시 문서 기준 차트 데이터
+}
+
 // TBM types
 export interface TbmSummary {
   participating_companies: number;

@@ -147,25 +147,12 @@ class RiskAssessmentParser(BaseExcelParser):
         action_col = self._find_action_column()
 
         for row in range(start_row, end_row + 1):
-            # Check NO column for valid number
-            no_val = self.get_cell_value(row, 1)
-            if no_val is None:
-                continue
-
-            # Handle both integer and string numbers
-            no_str = str(no_val).strip()
-            if not no_str:
-                continue
-
-            # Check if it's a valid number (skip non-numeric rows)
-            try:
-                int(no_str)
-            except ValueError:
-                continue
-
+            # 위험요인 컬럼에 내용이 있으면 레코드로 추가
+            # (NO 컬럼 유무와 관계없이 - 대분류 아래 서브행도 포함)
             risk_factor = clean_cell_value(self.get_cell_value(row, risk_col))
             action_result = clean_cell_value(self.get_cell_value(row, action_col))
 
+            # 위험요인이나 개선대책이 있는 행만 포함
             if risk_factor or action_result:
                 records.append({
                     "risk_factor": risk_factor,

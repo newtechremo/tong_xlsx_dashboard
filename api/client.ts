@@ -12,6 +12,7 @@ import type {
   RiskSummaryResponse,
   RiskDocument,
   RiskItem,
+  RiskDailyResponse,
   TbmSummaryResponse,
   TbmLog,
   TbmParticipant,
@@ -104,6 +105,14 @@ export const riskApi = {
 
   getItems: (docId: number) =>
     fetchApi<RiskItem[]>(`/risk/items/${docId}`),
+
+  // 문서 타입별 통계 (일간/주간/월간 지원)
+  getDaily: (siteId: number, date: string, period: string = 'DAILY') =>
+    fetchApi<RiskDailyResponse>('/risk/daily', {
+      site_id: siteId,
+      date,
+      period
+    }),
 };
 
 // TBM API - consolidated under /dashboard/tbm

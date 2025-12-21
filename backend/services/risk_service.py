@@ -14,7 +14,10 @@ from backend.api.schemas.risk import (
     RiskSummaryResponse,
     RiskDocument,
     RiskItem,
-    RiskChartData
+    RiskChartData,
+    RiskDocTypeStats,
+    RiskCompanyRow,
+    RiskDailyResponse,
 )
 from .base_service import get_date_range
 
@@ -245,6 +248,191 @@ def get_risk_items(doc_id: int) -> List[RiskItem]:
             )
             for row in cursor.fetchall()
         ]
+
+    finally:
+        conn.close()
+
+
+def get_risk_daily_summary(
+    site_id: int,
+    date_str: str,
+    period: str = "DAILY"
+) -> RiskDailyResponse:
+    """
+    위험성평가 통계 (일간/주간/월간 모두 지원).
+    협력사별로 문서 타입(최초/수시/정기)별 통계를 반환.
+    KPI 추가위험요인 = 수시 문서의 위험요인만 집계
+    """
+    start_date, end_date = get_date_range(date_str, period)
+
+    conn = sqlite3.connect(str(DATABASE_PATH))
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+
+    try:
+        # 해당 기간에 유효한 문서를 협력사별, 타입별로 그룹핑
+        query = """
+            SELECT
+                p.id as partner_id,
+                p.name as partner_name,
+                d.risk_type,
+                COUNT(DISTINCT d.id) as doc_count,
+                SUM(CASE WHEN i.risk_factor IS NOT NULL AND i.risk_factor != '' THEN 1 ELSE 0 END) as risk_count,
+                SUM(CASE WHEN i.action_result IS NOT NULL AND i.action_result != '' THEN 1 ELSE 0 END) as measure_count
+            FROM risk_docs d
+            JOIN partners p ON d.partner_id = p.id
+            LEFT JOIN risk_items i ON d.id = i.doc_id
+            WHERE d.site_id = ?
+              AND d.start_date <= ?
+              AND d.end_date >= ?
+            GROUP BY p.id, d.risk_type
+            ORDER BY p.name, d.risk_type
+        """
+        cursor.execute(query, (site_id, end_date.isoformat(), start_date.isoformat()))
+        type_data = cursor.fetchall()
+
+        # 수시 문서의 조치결과(이행) 건수 조회 - action_result가 있는 항목
+        # 수시는 조치결과(이행)이 별도로 기록됨
+        action_query = """
+            SELECT
+                p.id as partner_id,
+                d.risk_type,
+                SUM(CASE WHEN i.action_result IS NOT NULL AND i.action_result != '' THEN 1 ELSE 0 END) as action_count
+            FROM risk_docs d
+            JOIN partners p ON d.partner_id = p.id
+            LEFT JOIN risk_items i ON d.id = i.doc_id
+            WHERE d.site_id = ?
+              AND d.start_date <= ?
+              AND d.end_date >= ?
+              AND d.risk_type = '수시'
+            GROUP BY p.id
+        """
+        cursor.execute(action_query, (site_id, end_date.isoformat(), start_date.isoformat()))
+        action_data = {row["partner_id"]: row["action_count"] or 0 for row in cursor.fetchall()}
+
+        # 수시 문서의 확인근로자 수 조회
+        confirm_query = """
+            SELECT
+                p.id as partner_id,
+                COUNT(DISTINCT rc.worker_name) as confirm_count
+            FROM risk_docs d
+            JOIN partners p ON d.partner_id = p.id
+            LEFT JOIN risk_confirmations rc ON d.id = rc.doc_id
+            WHERE d.site_id = ?
+              AND d.start_date <= ?
+              AND d.end_date >= ?
+              AND d.risk_type = '수시'
+            GROUP BY p.id
+        """
+        cursor.execute(confirm_query, (site_id, end_date.isoformat(), start_date.isoformat()))
+        confirm_data = {row["partner_id"]: row["confirm_count"] or 0 for row in cursor.fetchall()}
+
+        # 협력사별로 데이터 그룹핑
+        partners_map = {}
+        for row in type_data:
+            partner_id = row["partner_id"]
+            if partner_id not in partners_map:
+                partners_map[partner_id] = {
+                    "id": str(partner_id),
+                    "label": row["partner_name"],
+                    "doc_types": {},
+                    "totals": {"doc": 0, "risk": 0, "measure": 0, "action": 0, "confirm": 0}
+                }
+
+            risk_type = row["risk_type"]
+            doc_count = row["doc_count"] or 0
+            risk_count = row["risk_count"] or 0
+            measure_count = row["measure_count"] or 0
+
+            # 수시만 조치결과와 확인근로자가 있음
+            if risk_type == "수시":
+                action_count = action_data.get(partner_id, 0)
+                confirm_count = confirm_data.get(partner_id, 0)
+            else:
+                action_count = 0
+                confirm_count = 0
+
+            partners_map[partner_id]["doc_types"][risk_type] = RiskDocTypeStats(
+                doc_type=risk_type,
+                doc_count=doc_count,
+                risk_count=risk_count,
+                measure_count=measure_count,
+                action_count=action_count,
+                confirm_count=confirm_count
+            )
+
+            # 합계 누적
+            partners_map[partner_id]["totals"]["doc"] += doc_count
+            partners_map[partner_id]["totals"]["risk"] += risk_count
+            partners_map[partner_id]["totals"]["measure"] += measure_count
+            partners_map[partner_id]["totals"]["action"] += action_count
+            partners_map[partner_id]["totals"]["confirm"] += confirm_count
+
+        # RiskCompanyRow 리스트 생성
+        rows = []
+        summary = RiskSummary()
+
+        for partner_id, data in partners_map.items():
+            # 문서 타입별 통계 리스트 (최초, 수시, 정기 순서)
+            doc_type_list = []
+            for dtype in ["최초", "수시", "정기"]:
+                if dtype in data["doc_types"]:
+                    doc_type_list.append(data["doc_types"][dtype])
+                else:
+                    # 해당 타입 문서가 없으면 빈 통계
+                    doc_type_list.append(RiskDocTypeStats(doc_type=dtype))
+
+            row = RiskCompanyRow(
+                id=data["id"],
+                label=data["label"],
+                doc_types=doc_type_list,
+                total_doc_count=data["totals"]["doc"],
+                total_risk_count=data["totals"]["risk"],
+                total_measure_count=data["totals"]["measure"],
+                total_action_count=data["totals"]["action"],
+                total_confirm_count=data["totals"]["confirm"]
+            )
+            rows.append(row)
+
+            # Summary 집계
+            summary.active_documents += data["totals"]["doc"]
+            # KPI 추가위험요인: 수시 문서의 위험요인만 집계
+            if "수시" in data["doc_types"]:
+                summary.risk_factors += data["doc_types"]["수시"].risk_count
+            # KPI 조치/이행확인: 수시 문서의 조치결과만 집계
+            summary.action_results += data["totals"]["action"]
+
+        summary.participating_companies = len(rows)
+
+        # 차트 데이터 생성 (수시 문서 기준)
+        chart_data = []
+        current_date = start_date
+        while current_date <= end_date:
+            date_str_chart = current_date.isoformat()
+
+            # 수시 문서만 조회
+            chart_query = """
+                SELECT
+                    SUM(CASE WHEN i.risk_factor IS NOT NULL AND i.risk_factor != '' THEN 1 ELSE 0 END) as risk_count,
+                    SUM(CASE WHEN i.action_result IS NOT NULL AND i.action_result != '' THEN 1 ELSE 0 END) as action_count
+                FROM risk_docs d
+                LEFT JOIN risk_items i ON d.id = i.doc_id
+                WHERE d.site_id = ?
+                  AND d.risk_type = '수시'
+                  AND d.start_date <= ?
+                  AND d.end_date >= ?
+            """
+            cursor.execute(chart_query, (site_id, date_str_chart, date_str_chart))
+            result = cursor.fetchone()
+            chart_data.append(RiskChartData(
+                date=date_str_chart,
+                risk_count=result["risk_count"] or 0,
+                action_count=result["action_count"] or 0
+            ))
+
+            current_date += timedelta(days=1)
+
+        return RiskDailyResponse(summary=summary, rows=rows, chart_data=chart_data)
 
     finally:
         conn.close()

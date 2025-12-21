@@ -32,6 +32,38 @@ class RiskChartData(BaseModel):
     action_count: int = 0
 
 
+# ============ 새로운 문서 타입별 통계 스키마 ============
+
+class RiskDocTypeStats(BaseModel):
+    """Statistics for a specific document type (최초/수시/정기)."""
+    doc_type: str  # 최초, 수시, 정기
+    doc_count: int = 0  # 문서 건수
+    risk_count: int = 0  # 위험요인 건수
+    measure_count: int = 0  # 개선대책 건수 (최초/정기는 risk_count와 동일)
+    action_count: int = 0  # 조치결과(이행) 건수 - 수시만 해당
+    confirm_count: int = 0  # 확인근로자 수 - 수시만 해당
+
+
+class RiskCompanyRow(BaseModel):
+    """Company row with document type breakdown for daily view."""
+    id: str  # partner_id
+    label: str  # partner name
+    doc_types: List[RiskDocTypeStats]  # 문서 타입별 통계
+    # 합계
+    total_doc_count: int = 0
+    total_risk_count: int = 0
+    total_measure_count: int = 0
+    total_action_count: int = 0
+    total_confirm_count: int = 0
+
+
+class RiskDailyResponse(BaseModel):
+    """일간/주간/월간 위험성평가 응답 (문서 타입별 통계 포함)."""
+    summary: RiskSummary
+    rows: List[RiskCompanyRow]
+    chart_data: List[RiskChartData] = []  # 수시 문서 기준 차트 데이터
+
+
 class RiskSummaryResponse(BaseModel):
     """Full risk summary response."""
     summary: RiskSummary

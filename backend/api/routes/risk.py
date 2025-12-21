@@ -8,12 +8,14 @@ from fastapi import APIRouter, Query
 from backend.api.schemas.risk import (
     RiskSummaryResponse,
     RiskDocument,
-    RiskItem
+    RiskItem,
+    RiskDailyResponse
 )
 from backend.services.risk_service import (
     get_risk_summary,
     get_risk_documents,
-    get_risk_items
+    get_risk_items,
+    get_risk_daily_summary
 )
 
 router = APIRouter()
@@ -55,3 +57,22 @@ async def risk_items(doc_id: int):
     Get risk items for a specific document.
     """
     return get_risk_items(doc_id)
+
+
+@router.get("/daily", response_model=RiskDailyResponse)
+async def risk_daily(
+    site_id: int = Query(..., description="Site ID (required)"),
+    date: str = Query(..., description="Date in YYYY-MM-DD format"),
+    period: str = Query("DAILY", description="Period: DAILY, WEEKLY, or MONTHLY")
+):
+    """
+    위험성평가 통계 (일간/주간/월간 지원).
+    협력사별로 문서 타입(최초/수시/정기)별 통계를 반환.
+
+    Returns:
+    - 참여업체별 문서 타입 통계
+    - 최초/수시/정기 각각의 문서 수, 위험요인, 개선대책, 조치결과(이행), 확인근로자
+    - 수시 문서 기준 차트 데이터
+    - KPI 추가위험요인: 수시 문서의 위험요인만 집계
+    """
+    return get_risk_daily_summary(site_id, date, period)
