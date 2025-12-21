@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { mockRiskDocs, MOCK_SITES } from '../mockData';
 import { riskApi } from '../api/client';
-import type { RiskSummaryResponse, RiskDailyResponse } from '../api/types';
+import type { RiskSummaryResponse, RiskDailyResponse, RiskAllSitesResponse } from '../api/types';
 import { isWithinInterval, endOfWeek, endOfMonth } from 'date-fns';
 import LoadingSpinner from './LoadingSpinner';
 import ErrorMessage from './ErrorMessage';
@@ -51,14 +51,28 @@ const RiskAssessmentView: React.FC<RiskAssessmentViewProps> = ({ selectedSite, s
   // API state
   const [apiData, setApiData] = useState<RiskSummaryResponse | null>(null);
   const [dailyData, setDailyData] = useState<RiskDailyResponse | null>(null);
+  const [allSitesData, setAllSitesData] = useState<RiskAllSitesResponse | null>(null);
   const [apiLoading, setApiLoading] = useState(USE_API);
   const [apiError, setApiError] = useState<string | null>(null);
 
-  // 일간 테이블 확장 상태 관리
+  // 테이블 확장 상태 관리 (현장, 협력사)
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+  const [expandedCompanies, setExpandedCompanies] = useState<Set<string>>(new Set());
 
   const toggleRow = (id: string) => {
     setExpandedRows(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const toggleCompany = (id: string) => {
+    setExpandedCompanies(prev => {
       const next = new Set(prev);
       if (next.has(id)) {
         next.delete(id);
@@ -84,6 +98,7 @@ const RiskAssessmentView: React.FC<RiskAssessmentViewProps> = ({ selectedSite, s
         .then((data) => {
           setDailyData(data);
           setApiData(null);
+          setAllSitesData(null);
           setApiLoading(false);
           // 기본적으로 모든 행 확장
           setExpandedRows(new Set(data.rows.map(r => r.id)));
@@ -94,15 +109,21 @@ const RiskAssessmentView: React.FC<RiskAssessmentViewProps> = ({ selectedSite, s
           setApiLoading(false);
         });
     } else {
-      // 전체 현장: 기존 API 사용
-      riskApi.getSummary(siteId, selectedDate, period)
+      // 전체 현장: 새 API 사용 (현장→협력사→문서타입 구조)
+      riskApi.getAllSites(selectedDate, period)
         .then((data) => {
-          setApiData(data);
+          setAllSitesData(data);
+          setApiData(null);
           setDailyData(null);
           setApiLoading(false);
+          // 기본적으로 모든 현장 확장
+          setExpandedRows(new Set(data.rows.map(r => r.id)));
+          // 모든 협력사도 확장
+          const companyIds = data.rows.flatMap(site => site.companies.map(c => `${site.id}-${c.id}`));
+          setExpandedCompanies(new Set(companyIds));
         })
         .catch((err) => {
-          console.error('Risk API error:', err);
+          console.error('Risk All Sites API error:', err);
           setApiError(err.message || 'Failed to load risk data');
           setApiLoading(false);
         });
@@ -121,7 +142,7 @@ const RiskAssessmentView: React.FC<RiskAssessmentViewProps> = ({ selectedSite, s
   }, [selectedDate, period]);
 
   const riskKpis = useMemo(() => {
-    // Use daily API data if available
+    // Use daily API data if available (특정 현장)
     if (USE_API && dailyData) {
       return {
         participatingCompanies: dailyData.summary.participating_companies,
@@ -131,7 +152,17 @@ const RiskAssessmentView: React.FC<RiskAssessmentViewProps> = ({ selectedSite, s
       };
     }
 
-    // Use API data if available
+    // Use all-sites API data if available (전체 현장)
+    if (USE_API && allSitesData) {
+      return {
+        participatingCompanies: allSitesData.summary.participating_companies,
+        activeDocuments: allSitesData.summary.active_documents,
+        riskFactors: allSitesData.summary.risk_factors,
+        actionResults: allSitesData.summary.action_results
+      };
+    }
+
+    // Use API data if available (fallback)
     if (USE_API && apiData) {
       return {
         participatingCompanies: apiData.summary.participating_companies,
@@ -168,7 +199,7 @@ const RiskAssessmentView: React.FC<RiskAssessmentViewProps> = ({ selectedSite, s
     });
 
     return { participatingCompanies, activeDocuments, riskFactors, actionResults };
-  }, [selectedSite, dateRange, isAllSites, apiData, dailyData]);
+  }, [selectedSite, dateRange, isAllSites, apiData, dailyData, allSitesData]);
 
   const tableData = useMemo(() => {
     // Use API data if available
@@ -253,7 +284,8 @@ const RiskAssessmentView: React.FC<RiskAssessmentViewProps> = ({ selectedSite, s
   // Show no data message when API returns empty data
   const hasNoData = USE_API && (
     (dailyData && dailyData.summary.active_documents === 0) ||
-    (apiData && apiData.summary.active_documents === 0 && !dailyData)
+    (allSitesData && allSitesData.summary.active_documents === 0) ||
+    (apiData && apiData.summary.active_documents === 0 && !dailyData && !allSitesData)
   );
   if (hasNoData) {
     return <NoDataMessage message="해당 기간에 위험성평가 데이터가 없습니다" />;
@@ -263,7 +295,164 @@ const RiskAssessmentView: React.FC<RiskAssessmentViewProps> = ({ selectedSite, s
     ? '현장별 위험성평가 통계'
     : `[${selectedSite.name} 위험성평가 통계]`;
 
-  // 일간 + 특정 현장: 새로운 문서타입별 테이블
+  // 전체 현장: 현장→협력사→문서타입 3단계 구조 테이블
+  const renderAllSitesTable = () => {
+    if (!allSitesData) return null;
+
+    const typeColors: Record<string, string> = {
+      '최초': 'bg-blue-100 text-blue-700',
+      '수시': 'bg-orange-100 text-orange-700',
+      '정기': 'bg-purple-100 text-purple-700'
+    };
+
+    return (
+      <div className="bg-white rounded-2xl border border-gray-300 shadow-sm">
+        <div className="px-8 py-5 border-b border-gray-200 bg-gray-50/80 flex items-center gap-3">
+          <div className="p-2 bg-slate-900 rounded-lg text-white">
+            <ListFilter size={20} />
+          </div>
+          <h3 className="text-xl font-black text-slate-800 tracking-tight">
+            전체 현장 위험성평가 통계
+          </h3>
+        </div>
+        <div className="overflow-x-visible">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-slate-50 border-b border-gray-200 text-[11px] font-black text-gray-700 uppercase tracking-widest">
+                <th className="px-8 py-4 border-r border-gray-100">현장 / 협력사</th>
+                <th className="px-6 py-4 text-center border-r border-gray-100">위험성평가 문서</th>
+                <th className="px-6 py-4 text-center border-r border-gray-100">위험요인</th>
+                <th className="px-6 py-4 text-center border-r border-gray-100">개선대책</th>
+                <th className="px-6 py-4 text-center border-r border-gray-100 text-green-700 bg-green-50/30">조치결과(이행)</th>
+                <th className="px-6 py-4 text-center">확인근로자</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {allSitesData.rows.map((site) => {
+                const isSiteExpanded = expandedRows.has(site.id);
+                return (
+                  <React.Fragment key={site.id}>
+                    {/* 현장 메인 행 */}
+                    <tr
+                      className="hover:bg-blue-50 transition-colors cursor-pointer group bg-blue-50/30"
+                      onClick={() => toggleRow(site.id)}
+                    >
+                      <td className="px-8 py-5 border-r border-gray-50">
+                        <div className="flex items-center gap-2">
+                          {isSiteExpanded ? <ChevronDown size={20} className="text-blue-600" /> : <ChevronRight size={20} className="text-blue-600" />}
+                          <span className="font-black text-blue-800 text-lg group-hover:text-blue-600 transition-colors">
+                            {site.label}
+                          </span>
+                          <span className="text-sm text-slate-500 ml-2">({site.total_comp_count}개 업체)</span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-5 text-center font-black text-slate-700 border-r border-gray-50">
+                        {site.total_doc_count}건
+                      </td>
+                      <td className="px-6 py-5 text-center font-black text-slate-700 border-r border-gray-50">
+                        {site.total_risk_count}건
+                      </td>
+                      <td className="px-6 py-5 text-center font-black text-slate-700 border-r border-gray-50">
+                        {site.total_measure_count}건
+                      </td>
+                      <td className={`px-6 py-5 text-center font-black border-r border-gray-50 ${site.total_action_count > 0 ? 'text-green-700 bg-green-50/10' : 'text-slate-300'}`}>
+                        {site.total_action_count > 0 ? `${site.total_action_count}건` : '-'}
+                      </td>
+                      <td className={`px-6 py-5 text-center font-black ${site.total_confirm_count > 0 ? 'text-blue-700' : 'text-slate-300'}`}>
+                        {site.total_confirm_count > 0 ? `${site.total_confirm_count}명` : '-'}
+                      </td>
+                    </tr>
+
+                    {/* 협력사별 행 (현장 확장시) */}
+                    {isSiteExpanded && site.companies.map((company) => {
+                      const companyKey = `${site.id}-${company.id}`;
+                      const isCompanyExpanded = expandedCompanies.has(companyKey);
+                      return (
+                        <React.Fragment key={companyKey}>
+                          {/* 협력사 행 */}
+                          <tr
+                            className="hover:bg-gray-50 transition-colors cursor-pointer group bg-slate-50/50"
+                            onClick={() => toggleCompany(companyKey)}
+                          >
+                            <td className="px-8 py-4 border-r border-gray-100">
+                              <div className="flex items-center gap-2 pl-6">
+                                {isCompanyExpanded ? <ChevronDown size={16} className="text-slate-400" /> : <ChevronRight size={16} className="text-slate-400" />}
+                                <span className="font-bold text-slate-700 group-hover:text-blue-600 transition-colors">
+                                  {company.label}
+                                </span>
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 text-center font-bold text-slate-600 border-r border-gray-100">
+                              {company.total_doc_count}건
+                            </td>
+                            <td className="px-6 py-4 text-center font-bold text-slate-600 border-r border-gray-100">
+                              {company.total_risk_count}건
+                            </td>
+                            <td className="px-6 py-4 text-center font-bold text-slate-600 border-r border-gray-100">
+                              {company.total_measure_count}건
+                            </td>
+                            <td className={`px-6 py-4 text-center font-bold border-r border-gray-100 ${company.total_action_count > 0 ? 'text-green-600' : 'text-slate-300'}`}>
+                              {company.total_action_count > 0 ? `${company.total_action_count}건` : '-'}
+                            </td>
+                            <td className={`px-6 py-4 text-center font-bold ${company.total_confirm_count > 0 ? 'text-blue-600' : 'text-slate-300'}`}>
+                              {company.total_confirm_count > 0 ? `${company.total_confirm_count}명` : '-'}
+                            </td>
+                          </tr>
+
+                          {/* 문서 타입별 서브행 (협력사 확장시) */}
+                          {isCompanyExpanded && company.doc_types.map((docType) => {
+                            if (docType.doc_count === 0) return null;
+
+                            const isAdHoc = docType.doc_type === '수시';
+
+                            return (
+                              <tr key={`${companyKey}-${docType.doc_type}`} className="bg-white border-t border-gray-100">
+                                <td className="px-8 py-3 border-r border-gray-100">
+                                  <div className="flex items-center gap-2 pl-14">
+                                    <span className={`px-2 py-0.5 rounded text-xs font-bold ${typeColors[docType.doc_type] || 'bg-gray-100 text-gray-600'}`}>
+                                      {docType.doc_type}
+                                    </span>
+                                  </div>
+                                </td>
+                                <td className="px-6 py-3 text-center font-medium text-slate-500 border-r border-gray-100">
+                                  {docType.doc_count}건
+                                </td>
+                                <td className="px-6 py-3 text-center font-medium text-slate-500 border-r border-gray-100">
+                                  {docType.risk_count}건
+                                </td>
+                                <td className="px-6 py-3 text-center font-medium text-slate-500 border-r border-gray-100">
+                                  {docType.measure_count}건
+                                </td>
+                                <td className={`px-6 py-3 text-center font-medium border-r border-gray-100 ${isAdHoc && docType.action_count > 0 ? 'text-green-600' : 'text-slate-300'}`}>
+                                  {isAdHoc && docType.action_count > 0 ? `${docType.action_count}건` : '-'}
+                                </td>
+                                <td className={`px-6 py-3 text-center font-medium ${isAdHoc && docType.confirm_count > 0 ? 'text-blue-600' : 'text-slate-300'}`}>
+                                  {isAdHoc && docType.confirm_count > 0 ? `${docType.confirm_count}명` : '-'}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </React.Fragment>
+                      );
+                    })}
+                  </React.Fragment>
+                );
+              })}
+              {allSitesData.rows.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="px-8 py-20 text-center text-slate-400 font-medium italic">
+                    해당 기간에 유효한 데이터가 존재하지 않습니다.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  };
+
+  // 특정 현장: 협력사→문서타입 2단계 구조 테이블
   const renderDailyTable = () => {
     if (!dailyData) return null;
 
@@ -390,11 +579,14 @@ const RiskAssessmentView: React.FC<RiskAssessmentViewProps> = ({ selectedSite, s
       </div>
 
       {(period === TimePeriod.WEEKLY || period === TimePeriod.MONTHLY) && (
-        <AnalyticsView site={selectedSite} period={period} selectedDate={selectedDate} apiChartData={dailyData?.chart_data || apiData?.chart_data} />
+        <AnalyticsView site={selectedSite} period={period} selectedDate={selectedDate} apiChartData={dailyData?.chart_data || allSitesData?.chart_data || apiData?.chart_data} />
       )}
 
-      {/* 일간 + 특정 현장: 문서타입별 새 테이블 */}
-      {dailyData ? renderDailyTable() : (
+      {/* 전체 현장: 현장→협력사→문서타입 3단계 테이블 */}
+      {allSitesData ? renderAllSitesTable() : null}
+
+      {/* 특정 현장: 협력사→문서타입 2단계 테이블 */}
+      {dailyData ? renderDailyTable() : (!allSitesData && (
         <div className="bg-white rounded-2xl border border-gray-300 shadow-sm">
           <div className="px-8 py-5 border-b border-gray-200 bg-gray-50/80 flex items-center gap-3">
             <div className="p-2 bg-slate-900 rounded-lg text-white">
@@ -453,7 +645,7 @@ const RiskAssessmentView: React.FC<RiskAssessmentViewProps> = ({ selectedSite, s
             </table>
           </div>
         </div>
-      )}
+      ))}
     </div>
   );
 };

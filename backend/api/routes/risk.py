@@ -9,13 +9,15 @@ from backend.api.schemas.risk import (
     RiskSummaryResponse,
     RiskDocument,
     RiskItem,
-    RiskDailyResponse
+    RiskDailyResponse,
+    RiskAllSitesResponse
 )
 from backend.services.risk_service import (
     get_risk_summary,
     get_risk_documents,
     get_risk_items,
-    get_risk_daily_summary
+    get_risk_daily_summary,
+    get_risk_all_sites_summary
 )
 
 router = APIRouter()
@@ -76,3 +78,20 @@ async def risk_daily(
     - KPI 추가위험요인: 수시 문서의 위험요인만 집계
     """
     return get_risk_daily_summary(site_id, date, period)
+
+
+@router.get("/all-sites", response_model=RiskAllSitesResponse)
+async def risk_all_sites(
+    date: str = Query(..., description="Date in YYYY-MM-DD format"),
+    period: str = Query("DAILY", description="Period: DAILY, WEEKLY, or MONTHLY")
+):
+    """
+    전체 현장 위험성평가 통계 (일간/주간/월간 지원).
+    현장별 → 협력사별 → 문서 타입별 통계를 반환.
+
+    Returns:
+    - 현장별 통계 (하위에 협력사별, 문서타입별 통계 포함)
+    - 수시 문서 기준 차트 데이터
+    - KPI 추가위험요인: 수시 문서의 위험요인만 집계
+    """
+    return get_risk_all_sites_summary(date, period)

@@ -13,6 +13,7 @@ import type {
   RiskDocument,
   RiskItem,
   RiskDailyResponse,
+  RiskAllSitesResponse,
   TbmSummaryResponse,
   TbmLog,
   TbmParticipant,
@@ -106,10 +107,17 @@ export const riskApi = {
   getItems: (docId: number) =>
     fetchApi<RiskItem[]>(`/risk/items/${docId}`),
 
-  // 문서 타입별 통계 (일간/주간/월간 지원)
+  // 문서 타입별 통계 (일간/주간/월간 지원) - 특정 현장
   getDaily: (siteId: number, date: string, period: string = 'DAILY') =>
     fetchApi<RiskDailyResponse>('/risk/daily', {
       site_id: siteId,
+      date,
+      period
+    }),
+
+  // 전체 현장 문서 타입별 통계 (현장→협력사→문서타입 구조)
+  getAllSites: (date: string, period: string = 'DAILY') =>
+    fetchApi<RiskAllSitesResponse>('/risk/all-sites', {
       date,
       period
     }),

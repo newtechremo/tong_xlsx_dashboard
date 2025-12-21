@@ -57,10 +57,31 @@ class RiskCompanyRow(BaseModel):
     total_confirm_count: int = 0
 
 
+class RiskSiteRow(BaseModel):
+    """Site row with company breakdown for all-sites view."""
+    id: str  # site_id
+    label: str  # site name
+    companies: List[RiskCompanyRow]  # 협력사별 통계
+    # 현장 합계
+    total_comp_count: int = 0
+    total_doc_count: int = 0
+    total_risk_count: int = 0
+    total_measure_count: int = 0
+    total_action_count: int = 0
+    total_confirm_count: int = 0
+
+
 class RiskDailyResponse(BaseModel):
     """일간/주간/월간 위험성평가 응답 (문서 타입별 통계 포함)."""
     summary: RiskSummary
     rows: List[RiskCompanyRow]
+    chart_data: List[RiskChartData] = []  # 수시 문서 기준 차트 데이터
+
+
+class RiskAllSitesResponse(BaseModel):
+    """전체 현장용 위험성평가 응답 (현장→협력사→문서타입 구조)."""
+    summary: RiskSummary
+    rows: List[RiskSiteRow]
     chart_data: List[RiskChartData] = []  # 수시 문서 기준 차트 데이터
 
 

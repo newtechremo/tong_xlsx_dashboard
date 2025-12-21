@@ -18,6 +18,8 @@ from backend.api.schemas.risk import (
     RiskDocTypeStats,
     RiskCompanyRow,
     RiskDailyResponse,
+    RiskSiteRow,
+    RiskAllSitesResponse,
 )
 from .base_service import get_date_range
 
@@ -433,6 +435,230 @@ def get_risk_daily_summary(
             current_date += timedelta(days=1)
 
         return RiskDailyResponse(summary=summary, rows=rows, chart_data=chart_data)
+
+    finally:
+        conn.close()
+
+
+def get_risk_all_sites_summary(
+    date_str: str,
+    period: str = "DAILY"
+) -> RiskAllSitesResponse:
+    """
+    전체 현장 위험성평가 통계 (일간/주간/월간 지원).
+    현장별 → 협력사별 → 문서 타입별 통계를 반환.
+    KPI 추가위험요인 = 수시 문서의 위험요인만 집계
+    """
+    start_date, end_date = get_date_range(date_str, period)
+
+    conn = sqlite3.connect(str(DATABASE_PATH))
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+
+    try:
+        # 모든 현장/협력사/문서타입별 통계 조회
+        query = """
+            SELECT
+                s.id as site_id,
+                s.name as site_name,
+                p.id as partner_id,
+                p.name as partner_name,
+                d.risk_type,
+                COUNT(DISTINCT d.id) as doc_count,
+                SUM(CASE WHEN i.risk_factor IS NOT NULL AND i.risk_factor != '' THEN 1 ELSE 0 END) as risk_count,
+                SUM(CASE WHEN i.action_result IS NOT NULL AND i.action_result != '' THEN 1 ELSE 0 END) as measure_count
+            FROM risk_docs d
+            JOIN sites s ON d.site_id = s.id
+            JOIN partners p ON d.partner_id = p.id
+            LEFT JOIN risk_items i ON d.id = i.doc_id
+            WHERE d.start_date <= ?
+              AND d.end_date >= ?
+            GROUP BY s.id, p.id, d.risk_type
+            ORDER BY s.name, p.name, d.risk_type
+        """
+        cursor.execute(query, (end_date.isoformat(), start_date.isoformat()))
+        type_data = cursor.fetchall()
+
+        # 수시 문서의 조치결과(이행) 건수 조회
+        action_query = """
+            SELECT
+                s.id as site_id,
+                p.id as partner_id,
+                SUM(CASE WHEN i.action_result IS NOT NULL AND i.action_result != '' THEN 1 ELSE 0 END) as action_count
+            FROM risk_docs d
+            JOIN sites s ON d.site_id = s.id
+            JOIN partners p ON d.partner_id = p.id
+            LEFT JOIN risk_items i ON d.id = i.doc_id
+            WHERE d.start_date <= ?
+              AND d.end_date >= ?
+              AND d.risk_type = '수시'
+            GROUP BY s.id, p.id
+        """
+        cursor.execute(action_query, (end_date.isoformat(), start_date.isoformat()))
+        action_data = {}
+        for row in cursor.fetchall():
+            key = (row["site_id"], row["partner_id"])
+            action_data[key] = row["action_count"] or 0
+
+        # 수시 문서의 확인근로자 수 조회
+        confirm_query = """
+            SELECT
+                s.id as site_id,
+                p.id as partner_id,
+                COUNT(DISTINCT rc.worker_name) as confirm_count
+            FROM risk_docs d
+            JOIN sites s ON d.site_id = s.id
+            JOIN partners p ON d.partner_id = p.id
+            LEFT JOIN risk_confirmations rc ON d.id = rc.doc_id
+            WHERE d.start_date <= ?
+              AND d.end_date >= ?
+              AND d.risk_type = '수시'
+            GROUP BY s.id, p.id
+        """
+        cursor.execute(confirm_query, (end_date.isoformat(), start_date.isoformat()))
+        confirm_data = {}
+        for row in cursor.fetchall():
+            key = (row["site_id"], row["partner_id"])
+            confirm_data[key] = row["confirm_count"] or 0
+
+        # 현장별 → 협력사별 → 문서타입별 데이터 구조화
+        sites_map = {}
+        for row in type_data:
+            site_id = row["site_id"]
+            partner_id = row["partner_id"]
+            risk_type = row["risk_type"]
+
+            if site_id not in sites_map:
+                sites_map[site_id] = {
+                    "id": str(site_id),
+                    "label": row["site_name"],
+                    "partners": {},
+                    "totals": {"comp": 0, "doc": 0, "risk": 0, "measure": 0, "action": 0, "confirm": 0}
+                }
+
+            if partner_id not in sites_map[site_id]["partners"]:
+                sites_map[site_id]["partners"][partner_id] = {
+                    "id": str(partner_id),
+                    "label": row["partner_name"],
+                    "doc_types": {},
+                    "totals": {"doc": 0, "risk": 0, "measure": 0, "action": 0, "confirm": 0}
+                }
+
+            doc_count = row["doc_count"] or 0
+            risk_count = row["risk_count"] or 0
+            measure_count = row["measure_count"] or 0
+
+            # 수시만 조치결과와 확인근로자가 있음
+            key = (site_id, partner_id)
+            if risk_type == "수시":
+                action_count = action_data.get(key, 0)
+                confirm_count = confirm_data.get(key, 0)
+            else:
+                action_count = 0
+                confirm_count = 0
+
+            sites_map[site_id]["partners"][partner_id]["doc_types"][risk_type] = RiskDocTypeStats(
+                doc_type=risk_type,
+                doc_count=doc_count,
+                risk_count=risk_count,
+                measure_count=measure_count,
+                action_count=action_count,
+                confirm_count=confirm_count
+            )
+
+            # 협력사 합계 누적
+            sites_map[site_id]["partners"][partner_id]["totals"]["doc"] += doc_count
+            sites_map[site_id]["partners"][partner_id]["totals"]["risk"] += risk_count
+            sites_map[site_id]["partners"][partner_id]["totals"]["measure"] += measure_count
+            sites_map[site_id]["partners"][partner_id]["totals"]["action"] += action_count
+            sites_map[site_id]["partners"][partner_id]["totals"]["confirm"] += confirm_count
+
+        # RiskSiteRow 리스트 생성
+        site_rows = []
+        summary = RiskSummary()
+
+        for site_id, site_data in sites_map.items():
+            company_rows = []
+
+            for partner_id, partner_data in site_data["partners"].items():
+                # 문서 타입별 통계 리스트 (최초, 수시, 정기 순서)
+                doc_type_list = []
+                for dtype in ["최초", "수시", "정기"]:
+                    if dtype in partner_data["doc_types"]:
+                        doc_type_list.append(partner_data["doc_types"][dtype])
+                    else:
+                        doc_type_list.append(RiskDocTypeStats(doc_type=dtype))
+
+                company_row = RiskCompanyRow(
+                    id=partner_data["id"],
+                    label=partner_data["label"],
+                    doc_types=doc_type_list,
+                    total_doc_count=partner_data["totals"]["doc"],
+                    total_risk_count=partner_data["totals"]["risk"],
+                    total_measure_count=partner_data["totals"]["measure"],
+                    total_action_count=partner_data["totals"]["action"],
+                    total_confirm_count=partner_data["totals"]["confirm"]
+                )
+                company_rows.append(company_row)
+
+                # 현장 합계 누적
+                site_data["totals"]["doc"] += partner_data["totals"]["doc"]
+                site_data["totals"]["risk"] += partner_data["totals"]["risk"]
+                site_data["totals"]["measure"] += partner_data["totals"]["measure"]
+                site_data["totals"]["action"] += partner_data["totals"]["action"]
+                site_data["totals"]["confirm"] += partner_data["totals"]["confirm"]
+
+            site_row = RiskSiteRow(
+                id=site_data["id"],
+                label=site_data["label"],
+                companies=company_rows,
+                total_comp_count=len(company_rows),
+                total_doc_count=site_data["totals"]["doc"],
+                total_risk_count=site_data["totals"]["risk"],
+                total_measure_count=site_data["totals"]["measure"],
+                total_action_count=site_data["totals"]["action"],
+                total_confirm_count=site_data["totals"]["confirm"]
+            )
+            site_rows.append(site_row)
+
+            # Summary 집계
+            summary.active_documents += site_data["totals"]["doc"]
+            # KPI 추가위험요인: 수시 문서의 위험요인만 집계
+            for partner_data in site_data["partners"].values():
+                if "수시" in partner_data["doc_types"]:
+                    summary.risk_factors += partner_data["doc_types"]["수시"].risk_count
+            summary.action_results += site_data["totals"]["action"]
+
+        summary.participating_companies = sum(len(s["partners"]) for s in sites_map.values())
+
+        # 차트 데이터 생성 (수시 문서 기준)
+        chart_data = []
+        current_date = start_date
+        while current_date <= end_date:
+            date_str_chart = current_date.isoformat()
+
+            # 수시 문서만 조회 (전체 현장)
+            chart_query = """
+                SELECT
+                    SUM(CASE WHEN i.risk_factor IS NOT NULL AND i.risk_factor != '' THEN 1 ELSE 0 END) as risk_count,
+                    SUM(CASE WHEN i.action_result IS NOT NULL AND i.action_result != '' THEN 1 ELSE 0 END) as action_count
+                FROM risk_docs d
+                LEFT JOIN risk_items i ON d.id = i.doc_id
+                WHERE d.risk_type = '수시'
+                  AND d.start_date <= ?
+                  AND d.end_date >= ?
+            """
+            cursor.execute(chart_query, (date_str_chart, date_str_chart))
+            result = cursor.fetchone()
+            chart_data.append(RiskChartData(
+                date=date_str_chart,
+                risk_count=result["risk_count"] or 0,
+                action_count=result["action_count"] or 0
+            ))
+
+            current_date += timedelta(days=1)
+
+        return RiskAllSitesResponse(summary=summary, rows=site_rows, chart_data=chart_data)
 
     finally:
         conn.close()

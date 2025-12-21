@@ -160,6 +160,25 @@ export interface RiskDailyResponse {
   chart_data: RiskChartData[];  // 수시 문서 기준 차트 데이터
 }
 
+// 전체 현장용 위험성평가 타입 (현장→협력사→문서타입 구조)
+export interface RiskSiteRow {
+  id: string;
+  label: string;
+  companies: RiskCompanyRow[];
+  total_comp_count: number;
+  total_doc_count: number;
+  total_risk_count: number;
+  total_measure_count: number;
+  total_action_count: number;
+  total_confirm_count: number;
+}
+
+export interface RiskAllSitesResponse {
+  summary: RiskSummary;
+  rows: RiskSiteRow[];
+  chart_data: RiskChartData[];  // 수시 문서 기준 차트 데이터
+}
+
 // TBM types
 export interface TbmSummary {
   participating_companies: number;
