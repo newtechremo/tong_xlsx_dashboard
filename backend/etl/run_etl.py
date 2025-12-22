@@ -82,6 +82,7 @@ def insert_risk_records(conn: sqlite3.Connection, parsed_data: Dict[str, Any]) -
     meta = parsed_data["metadata"]
     records = parsed_data["records"]
     confirmations = parsed_data.get("confirmations", [])
+    action_results = parsed_data.get("action_results", [])
     filename = parsed_data.get("filename", "")
 
     # Get or create site and partner
@@ -95,30 +96,31 @@ def insert_risk_records(conn: sqlite3.Connection, parsed_data: Dict[str, Any]) -
     end_date = meta.get("end_date")
     doc_index = meta.get("doc_index", 0)
     risk_type = meta.get("risk_type", "최초")
+    action_result_count = len(action_results)  # 조치이행결과 수
 
     if start_date:
         start_date = start_date.isoformat() if hasattr(start_date, 'isoformat') else str(start_date)
     if end_date:
         end_date = end_date.isoformat() if hasattr(end_date, 'isoformat') else str(end_date)
 
-    # Insert risk document
+    # Insert risk document with action_result_count
     cursor.execute("""
-        INSERT INTO risk_docs (site_id, partner_id, start_date, end_date, doc_index, risk_type, filename)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    """, (site_id, partner_id, start_date, end_date, doc_index, risk_type, filename))
+        INSERT INTO risk_docs (site_id, partner_id, start_date, end_date, doc_index, risk_type, action_result_count, filename)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    """, (site_id, partner_id, start_date, end_date, doc_index, risk_type, action_result_count, filename))
 
     doc_id = cursor.lastrowid
 
-    # Insert risk items
+    # Insert risk items (위험요인 + 개선대책)
     item_count = 0
     for record in records:
         cursor.execute("""
-            INSERT INTO risk_items (doc_id, risk_factor, action_result)
+            INSERT INTO risk_items (doc_id, risk_factor, measure)
             VALUES (?, ?, ?)
-        """, (doc_id, record.get("risk_factor"), record.get("action_result")))
+        """, (doc_id, record.get("risk_factor"), record.get("measure")))
         item_count += 1
 
-    # Insert confirmations (for 수시 type)
+    # Insert confirmations (for 수시/정기 type)
     confirm_count = 0
     for confirm in confirmations:
         cursor.execute("""

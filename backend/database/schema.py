@@ -43,7 +43,8 @@ CREATE TABLE IF NOT EXISTS risk_docs (
     start_date DATE NOT NULL,
     end_date DATE NOT NULL,
     doc_index INTEGER DEFAULT 0,
-    risk_type TEXT NOT NULL DEFAULT '최초',  -- '최초' or '수시'
+    risk_type TEXT NOT NULL DEFAULT '최초',  -- '최초', '수시', '정기'
+    action_result_count INTEGER DEFAULT 0,  -- 조치이행결과 수 (수시/정기만 해당)
     filename TEXT,
     FOREIGN KEY(site_id) REFERENCES sites(id),
     FOREIGN KEY(partner_id) REFERENCES partners(id)
@@ -53,7 +54,7 @@ CREATE TABLE IF NOT EXISTS risk_items (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     doc_id INTEGER NOT NULL,
     risk_factor TEXT,
-    action_result TEXT,
+    measure TEXT,  -- 개선대책
     FOREIGN KEY(doc_id) REFERENCES risk_docs(id)
 );
 

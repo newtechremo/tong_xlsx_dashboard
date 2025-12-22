@@ -69,13 +69,21 @@ class RiskAssessmentParser(BaseExcelParser):
         }
 
     def _determine_risk_type(self) -> str:
-        """Determine risk type from sheet name."""
+        """Determine risk type from sheet name.
+
+        Types:
+        - 최초: Initial risk assessment (default)
+        - 수시: Ad-hoc risk assessment
+        - 정기: Regular/periodic risk assessment
+        """
         if self.worksheet is None:
             return "최초"
 
         sheet_name = self.worksheet.title
         if "수시" in sheet_name:
             return "수시"
+        if "정기" in sheet_name:
+            return "정기"
         return "최초"
 
     def extract_metadata(self) -> Dict[str, Any]:
@@ -126,17 +134,16 @@ class RiskAssessmentParser(BaseExcelParser):
                         return col
         return 8  # Default for 수시
 
-    def _find_action_column(self) -> int:
-        """Find the column containing action results."""
+    def _find_measure_column(self) -> int:
+        """Find the column containing improvement measures (개선대책)."""
         for row in range(1, min(10, self.worksheet.max_row + 1)):
             for col in range(1, min(50, self.worksheet.max_column + 1)):
                 value = self.get_cell_value(row, col)
                 if value and isinstance(value, str):
                     text = value.strip()
-                    # "개선대책" is the common header for action results
-                    if "개선" in text or "조치" in text or "이행" in text:
+                    if "개선대책" in text or "개선 대책" in text:
                         return col
-        return 24  # Default for 최초 type
+        return 25  # Default for 수시 type
 
     def extract_data_rows(self) -> List[Dict[str, Any]]:
         """Extract risk assessment items from the worksheet."""
@@ -144,22 +151,73 @@ class RiskAssessmentParser(BaseExcelParser):
 
         start_row, end_row = self._find_data_rows()
         risk_col = self._find_risk_factor_column()
-        action_col = self._find_action_column()
+        measure_col = self._find_measure_column()
 
         for row in range(start_row, end_row + 1):
             # 위험요인 컬럼에 내용이 있으면 레코드로 추가
             # (NO 컬럼 유무와 관계없이 - 대분류 아래 서브행도 포함)
             risk_factor = clean_cell_value(self.get_cell_value(row, risk_col))
-            action_result = clean_cell_value(self.get_cell_value(row, action_col))
+            measure = clean_cell_value(self.get_cell_value(row, measure_col))
 
             # 위험요인이나 개선대책이 있는 행만 포함
-            if risk_factor or action_result:
+            if risk_factor or measure:
                 records.append({
                     "risk_factor": risk_factor,
-                    "action_result": action_result
+                    "measure": measure  # 개선대책
                 })
 
         return records
+
+    def extract_action_results(self) -> List[Dict[str, Any]]:
+        """Extract action results from 조치결과 section (수시/정기 only).
+
+        조치결과 섹션은 시트 하단에 위치 (위치는 데이터 길이에 따라 변동):
+        - "조 치 결 과 (위 험 성 평 가 이 행 확 인)" 헤더
+        - "1번 조치결과", "2번 조치결과" 등의 라벨 (같은 셀에 여러 개 있을 수 있음)
+        - 실제 조치결과 데이터 (등록일, 등록자, 내용)
+        """
+        action_results = []
+
+        risk_type = self._determine_risk_type()
+        if risk_type == "최초":
+            return action_results
+
+        # Find "조치결과" or "이행확인" section header (위치는 가변적)
+        action_section_row = None
+        for row in range(1, self.worksheet.max_row + 1):
+            val = self.get_cell_value(row, 1)
+            if val and isinstance(val, str):
+                text = val.replace(" ", "")
+                if "조치결과" in text and "이행" in text:
+                    action_section_row = row
+                    break
+
+        if not action_section_row:
+            return action_results
+
+        # Find rows with "N번 조치결과" labels and count actual data
+        for row in range(action_section_row, min(action_section_row + 10, self.worksheet.max_row + 1)):
+            # Check all columns for action result labels
+            for col in range(1, 50):
+                val = self.get_cell_value(row, col)
+                if val and isinstance(val, str) and "조치결과" in val and "번" in val:
+                    # This cell has action result labels (e.g., "1번 조치결과" or "1번 조치결과\n2번 조치결과")
+                    # Check next rows for actual data entries
+                    for data_row in range(row + 1, min(row + 10, self.worksheet.max_row + 1)):
+                        # Scan all columns for actual data (등록일, 내용 등)
+                        for data_col in range(1, 50):
+                            data_val = self.get_cell_value(data_row, data_col)
+                            if data_val and isinstance(data_val, str):
+                                # 등록일이 포함된 데이터만 조치결과로 카운트
+                                if "등록일" in data_val:
+                                    action_results.append({
+                                        "row": data_row,
+                                        "col": data_col,
+                                        "content": clean_cell_value(data_val)
+                                    })
+                    return action_results  # Found action section, return results
+
+        return action_results
 
     def extract_confirmations(self) -> List[Dict[str, Any]]:
         """Extract worker confirmations (only for 수시 type)."""
@@ -203,7 +261,7 @@ class RiskAssessmentParser(BaseExcelParser):
         return confirmations
 
     def run(self) -> Dict[str, Any]:
-        """Override run to include confirmations."""
+        """Override run to include confirmations and action results."""
         try:
             self.open_workbook()
             self.worksheet = self.get_sheet()
@@ -214,12 +272,14 @@ class RiskAssessmentParser(BaseExcelParser):
 
             records = self.extract_data_rows()
             confirmations = self.extract_confirmations()
+            action_results = self.extract_action_results()
 
             return {
                 "filename": self.file_path.name,
                 "metadata": metadata,
-                "records": records,
-                "confirmations": confirmations
+                "records": records,  # 위험요인 + 개선대책 (measure)
+                "confirmations": confirmations,  # 근로자 확인
+                "action_results": action_results  # 조치이행결과
             }
         finally:
             self.close_workbook()

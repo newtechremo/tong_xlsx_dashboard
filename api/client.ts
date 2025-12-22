@@ -20,7 +20,20 @@ import type {
   TbmUnconfirmedResponse
 } from './types';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+/**
+ * API Base URL - 현재 브라우저 접속 URL 기반으로 동적 결정
+ * - 환경변수 VITE_API_URL이 설정되어 있으면 해당 값 사용
+ * - 아니면 현재 접속한 hostname + port 8000 사용
+ */
+const getApiBase = (): string => {
+  if (import.meta.env.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL;
+  }
+  const { protocol, hostname } = window.location;
+  return `${protocol}//${hostname}:8000/api`;
+};
+
+const API_BASE = getApiBase();
 
 /**
  * Generic fetch wrapper with error handling

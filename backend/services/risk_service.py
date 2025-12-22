@@ -46,7 +46,7 @@ def get_risk_summary(
                     COUNT(DISTINCT d.id) as doc_count,
                     COUNT(DISTINCT p.id) as comp_count,
                     SUM(CASE WHEN i.risk_factor IS NOT NULL AND i.risk_factor != '' THEN 1 ELSE 0 END) as risk_count,
-                    SUM(CASE WHEN i.action_result IS NOT NULL AND i.action_result != '' THEN 1 ELSE 0 END) as action_count
+                    SUM(CASE WHEN i.measure IS NOT NULL AND i.measure != '' THEN 1 ELSE 0 END) as measure_count
                 FROM risk_docs d
                 JOIN partners p ON d.partner_id = p.id
                 LEFT JOIN risk_items i ON d.id = i.doc_id
@@ -66,7 +66,7 @@ def get_risk_summary(
                     COUNT(DISTINCT d.id) as doc_count,
                     COUNT(DISTINCT d.partner_id) as comp_count,
                     SUM(CASE WHEN i.risk_factor IS NOT NULL AND i.risk_factor != '' THEN 1 ELSE 0 END) as risk_count,
-                    SUM(CASE WHEN i.action_result IS NOT NULL AND i.action_result != '' THEN 1 ELSE 0 END) as action_count
+                    SUM(CASE WHEN i.measure IS NOT NULL AND i.measure != '' THEN 1 ELSE 0 END) as measure_count
                 FROM risk_docs d
                 JOIN sites s ON d.site_id = s.id
                 LEFT JOIN risk_items i ON d.id = i.doc_id
@@ -114,7 +114,7 @@ def get_risk_summary(
                 comp_count=row["comp_count"] or 0,
                 doc_count=row["doc_count"] or 0,
                 risk_count=row["risk_count"] or 0,
-                action_count=row["action_count"] or 0,
+                action_count=row["measure_count"] or 0,
                 worker_count=worker_count
             )
             rows.append(table_row)
@@ -122,7 +122,7 @@ def get_risk_summary(
             # Aggregate to summary
             summary.active_documents += row["doc_count"] or 0
             summary.risk_factors += row["risk_count"] or 0
-            summary.action_results += row["action_count"] or 0
+            summary.action_results += row["measure_count"] or 0
 
         # Count participating companies
         summary.participating_companies = len(rows)
@@ -138,7 +138,7 @@ def get_risk_summary(
                 chart_query = """
                     SELECT
                         SUM(CASE WHEN i.risk_factor IS NOT NULL AND i.risk_factor != '' THEN 1 ELSE 0 END) as risk_count,
-                        SUM(CASE WHEN i.action_result IS NOT NULL AND i.action_result != '' THEN 1 ELSE 0 END) as action_count
+                        SUM(CASE WHEN i.measure IS NOT NULL AND i.measure != '' THEN 1 ELSE 0 END) as action_count
                     FROM risk_docs d
                     LEFT JOIN risk_items i ON d.id = i.doc_id
                     WHERE d.site_id = ?
@@ -150,7 +150,7 @@ def get_risk_summary(
                 chart_query = """
                     SELECT
                         SUM(CASE WHEN i.risk_factor IS NOT NULL AND i.risk_factor != '' THEN 1 ELSE 0 END) as risk_count,
-                        SUM(CASE WHEN i.action_result IS NOT NULL AND i.action_result != '' THEN 1 ELSE 0 END) as action_count
+                        SUM(CASE WHEN i.measure IS NOT NULL AND i.measure != '' THEN 1 ELSE 0 END) as action_count
                     FROM risk_docs d
                     LEFT JOIN risk_items i ON d.id = i.doc_id
                     WHERE d.start_date <= ?
@@ -236,7 +236,7 @@ def get_risk_items(doc_id: int) -> List[RiskItem]:
 
     try:
         cursor.execute("""
-            SELECT id, risk_factor, action_result
+            SELECT id, risk_factor, measure
             FROM risk_items
             WHERE doc_id = ?
             ORDER BY id
@@ -246,7 +246,7 @@ def get_risk_items(doc_id: int) -> List[RiskItem]:
             RiskItem(
                 id=row["id"],
                 risk_factor=row["risk_factor"],
-                action_result=row["action_result"]
+                measure=row["measure"]
             )
             for row in cursor.fetchall()
         ]
@@ -280,7 +280,7 @@ def get_risk_daily_summary(
                 d.risk_type,
                 COUNT(DISTINCT d.id) as doc_count,
                 SUM(CASE WHEN i.risk_factor IS NOT NULL AND i.risk_factor != '' THEN 1 ELSE 0 END) as risk_count,
-                SUM(CASE WHEN i.action_result IS NOT NULL AND i.action_result != '' THEN 1 ELSE 0 END) as measure_count
+                SUM(CASE WHEN i.measure IS NOT NULL AND i.measure != '' THEN 1 ELSE 0 END) as measure_count
             FROM risk_docs d
             JOIN partners p ON d.partner_id = p.id
             LEFT JOIN risk_items i ON d.id = i.doc_id
@@ -293,20 +293,18 @@ def get_risk_daily_summary(
         cursor.execute(query, (site_id, end_date.isoformat(), start_date.isoformat()))
         type_data = cursor.fetchall()
 
-        # 수시 문서의 조치결과(이행) 건수 조회 - action_result가 있는 항목
-        # 수시는 조치결과(이행)이 별도로 기록됨
+        # 수시/정기 문서의 조치이행결과 건수 조회 - risk_docs.action_result_count 사용
         action_query = """
             SELECT
                 p.id as partner_id,
                 d.risk_type,
-                SUM(CASE WHEN i.action_result IS NOT NULL AND i.action_result != '' THEN 1 ELSE 0 END) as action_count
+                SUM(d.action_result_count) as action_count
             FROM risk_docs d
             JOIN partners p ON d.partner_id = p.id
-            LEFT JOIN risk_items i ON d.id = i.doc_id
             WHERE d.site_id = ?
               AND d.start_date <= ?
               AND d.end_date >= ?
-              AND d.risk_type = '수시'
+              AND d.risk_type IN ('수시', '정기')
             GROUP BY p.id
         """
         cursor.execute(action_query, (site_id, end_date.isoformat(), start_date.isoformat()))
@@ -416,7 +414,7 @@ def get_risk_daily_summary(
             chart_query = """
                 SELECT
                     SUM(CASE WHEN i.risk_factor IS NOT NULL AND i.risk_factor != '' THEN 1 ELSE 0 END) as risk_count,
-                    SUM(CASE WHEN i.action_result IS NOT NULL AND i.action_result != '' THEN 1 ELSE 0 END) as action_count
+                    SUM(d.action_result_count) as action_count
                 FROM risk_docs d
                 LEFT JOIN risk_items i ON d.id = i.doc_id
                 WHERE d.site_id = ?
@@ -466,7 +464,7 @@ def get_risk_all_sites_summary(
                 d.risk_type,
                 COUNT(DISTINCT d.id) as doc_count,
                 SUM(CASE WHEN i.risk_factor IS NOT NULL AND i.risk_factor != '' THEN 1 ELSE 0 END) as risk_count,
-                SUM(CASE WHEN i.action_result IS NOT NULL AND i.action_result != '' THEN 1 ELSE 0 END) as measure_count
+                SUM(CASE WHEN i.measure IS NOT NULL AND i.measure != '' THEN 1 ELSE 0 END) as measure_count
             FROM risk_docs d
             JOIN sites s ON d.site_id = s.id
             JOIN partners p ON d.partner_id = p.id
@@ -479,19 +477,18 @@ def get_risk_all_sites_summary(
         cursor.execute(query, (end_date.isoformat(), start_date.isoformat()))
         type_data = cursor.fetchall()
 
-        # 수시 문서의 조치결과(이행) 건수 조회
+        # 수시 문서의 조치결과(이행) 건수 조회 - risk_docs.action_result_count 사용
         action_query = """
             SELECT
                 s.id as site_id,
                 p.id as partner_id,
-                SUM(CASE WHEN i.action_result IS NOT NULL AND i.action_result != '' THEN 1 ELSE 0 END) as action_count
+                SUM(d.action_result_count) as action_count
             FROM risk_docs d
             JOIN sites s ON d.site_id = s.id
             JOIN partners p ON d.partner_id = p.id
-            LEFT JOIN risk_items i ON d.id = i.doc_id
             WHERE d.start_date <= ?
               AND d.end_date >= ?
-              AND d.risk_type = '수시'
+              AND d.risk_type IN ('수시', '정기')
             GROUP BY s.id, p.id
         """
         cursor.execute(action_query, (end_date.isoformat(), start_date.isoformat()))
@@ -641,7 +638,7 @@ def get_risk_all_sites_summary(
             chart_query = """
                 SELECT
                     SUM(CASE WHEN i.risk_factor IS NOT NULL AND i.risk_factor != '' THEN 1 ELSE 0 END) as risk_count,
-                    SUM(CASE WHEN i.action_result IS NOT NULL AND i.action_result != '' THEN 1 ELSE 0 END) as action_count
+                    SUM(d.action_result_count) as action_count
                 FROM risk_docs d
                 LEFT JOIN risk_items i ON d.id = i.doc_id
                 WHERE d.risk_type = '수시'

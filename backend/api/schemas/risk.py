@@ -107,4 +107,4 @@ class RiskItem(BaseModel):
     """Risk item detail."""
     id: int
     risk_factor: Optional[str] = None
-    action_result: Optional[str] = None
+    measure: Optional[str] = None  # 개선대책
