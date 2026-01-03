@@ -9,7 +9,8 @@ import {
   FileText,
   ListFilter,
   X,
-  AlertTriangle
+  AlertTriangle,
+  ArrowUpRight
 } from 'lucide-react';
 import { TimePeriod, Site } from '../types';
 import { mockTbmData, mockAttendanceData, MOCK_SITES } from '../mockData';
@@ -310,7 +311,22 @@ const TbmMonitoringView: React.FC<TbmMonitoringViewProps> = ({ period, selectedD
                   }}
                 >
                   <td className="px-8 py-5 border-r border-gray-50">
-                    <div className="font-bold text-slate-800 text-lg group-hover:text-blue-600 transition-colors">{row.label}</div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-slate-800 text-lg group-hover:text-blue-600 transition-colors">{row.label}</span>
+                      {isAllSites && onSiteSelect && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const site: Site = { id: row.id, name: row.label, companies: [] };
+                            onSiteSelect(site);
+                          }}
+                          className="p-1 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                          title="해당 현장으로 이동"
+                        >
+                          <ArrowUpRight size={14} />
+                        </button>
+                      )}
+                    </div>
                   </td>
                   {isAllSites && (
                     <td className="px-6 py-5 text-center font-black text-slate-700 border-r border-gray-50">

@@ -21,7 +21,7 @@ import { Site, TimePeriod, DailyStat, Company } from '../types';
 import { MOCK_SITES } from '../mockData';
 import { dashboardApi } from '../api/client';
 import type { DashboardResponse, AttendanceWorker, AttendanceWorkersResponse } from '../api/types';
-import { Users, AlertCircle, ShieldAlert, X, LogOut, ShieldX, Info, ListFilter } from 'lucide-react';
+import { Users, AlertCircle, ShieldAlert, X, LogOut, ShieldX, Info, ListFilter, ArrowUpRight } from 'lucide-react';
 import LoadingSpinner from './LoadingSpinner';
 import ErrorMessage from './ErrorMessage';
 import NoDataMessage from './NoDataMessage';
@@ -45,6 +45,7 @@ interface DashboardViewProps {
   selectedSite: Site;
   selectedDate: string;
   period: TimePeriod;
+  onSiteSelect?: (site: Site) => void;
 }
 
 interface SummaryRow {
@@ -87,7 +88,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
   return null;
 };
 
-const DashboardView: React.FC<DashboardViewProps> = ({ selectedSite, selectedDate, period }) => {
+const DashboardView: React.FC<DashboardViewProps> = ({ selectedSite, selectedDate, period, onSiteSelect }) => {
   const isAllScope = selectedSite.id === 'all';
   const [isSeniorModalOpen, setIsSeniorModalOpen] = useState(false);
   const [isAccidentModalOpen, setIsAccidentModalOpen] = useState(false);
@@ -481,7 +482,24 @@ const DashboardView: React.FC<DashboardViewProps> = ({ selectedSite, selectedDat
                     onClick={() => handleRowClick(row)}
                     title="클릭하여 출근자 명단 보기"
                   >
-                    <td className="px-8 py-4 text-center font-bold text-slate-600 border-r border-gray-100 whitespace-nowrap hover:text-blue-600">{row.label}</td>
+                    <td className="px-8 py-4 text-center border-r border-gray-100 whitespace-nowrap">
+                                      <div className="flex items-center justify-center gap-2">
+                                        <span className="font-bold text-slate-600 hover:text-blue-600">{row.label}</span>
+                                        {isAllScope && onSiteSelect && (
+                                          <button
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              const site: Site = { id: row.id, name: row.label, companies: [] };
+                                              onSiteSelect(site);
+                                            }}
+                                            className="p-1 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                                            title="해당 현장으로 이동"
+                                          >
+                                            <ArrowUpRight size={14} />
+                                          </button>
+                                        )}
+                                      </div>
+                                    </td>
                     <td className="px-4 py-4 text-center font-black text-slate-700 border-r border-gray-50">{row.managerCount.toLocaleString()}</td>
                     <td className="px-4 py-4 text-center font-black text-slate-700 border-r border-gray-50">{row.workerCount.toLocaleString()}</td>
                     <td className="px-4 py-4 text-center font-black text-blue-700 bg-blue-50/5 border-r border-gray-100">{row.totalCount.toLocaleString()}</td>

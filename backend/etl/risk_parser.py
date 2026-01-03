@@ -111,15 +111,18 @@ class RiskAssessmentParser(BaseExcelParser):
         if not start_row:
             start_row = self.DATA_START_ROW
 
-        # Find end of data (before 추가 위험 요인 or 조치 결과 section)
+        # Find end of data (before 추가 위험 요인, 조치 결과, 아차사고 section)
         end_row = self.worksheet.max_row
         for row in range(start_row, self.worksheet.max_row + 1):
-            val = self.get_cell_value(row, 1)
-            if val and isinstance(val, str):
-                text = val.strip()
-                if "추가" in text or "조치" in text or "위험성평가" in text:
-                    end_row = row - 1
-                    break
+            # Check first few columns for section markers
+            for col in range(1, min(10, self.worksheet.max_column + 1)):
+                val = self.get_cell_value(row, col)
+                if val and isinstance(val, str):
+                    text = val.replace(" ", "").strip()
+                    # 데이터 영역 종료 마커들
+                    if any(marker in text for marker in ["추가", "조치", "위험성평가", "아차사고"]):
+                        end_row = row - 1
+                        return start_row, end_row
 
         return start_row, end_row
 
@@ -153,14 +156,23 @@ class RiskAssessmentParser(BaseExcelParser):
         risk_col = self._find_risk_factor_column()
         measure_col = self._find_measure_column()
 
+        # 무효 마커 - 이 텍스트가 포함된 경우 레코드로 처리하지 않음
+        invalid_markers = ["아차사고", "추가위험", "조치결과", "이행확인", "위험성평가"]
+
         for row in range(start_row, end_row + 1):
             # 위험요인 컬럼에 내용이 있으면 레코드로 추가
             # (NO 컬럼 유무와 관계없이 - 대분류 아래 서브행도 포함)
             risk_factor = clean_cell_value(self.get_cell_value(row, risk_col))
             measure = clean_cell_value(self.get_cell_value(row, measure_col))
 
-            # 위험요인이나 개선대책이 있는 행만 포함
-            if risk_factor or measure:
+            # 무효 마커가 포함된 경우 건너뛰기
+            risk_text = (risk_factor or "").replace(" ", "")
+            measure_text = (measure or "").replace(" ", "")
+            if any(marker in risk_text or marker in measure_text for marker in invalid_markers):
+                continue
+
+            # 위험요인과 개선대책 둘 다 있는 행만 유효한 레코드로 포함
+            if risk_factor and measure:
                 records.append({
                     "risk_factor": risk_factor,
                     "measure": measure  # 개선대책

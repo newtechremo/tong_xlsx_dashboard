@@ -84,6 +84,14 @@ CREATE TABLE IF NOT EXISTS tbm_participants (
     FOREIGN KEY(tbm_id) REFERENCES tbm_logs(id)
 );
 
+-- 4. ETL Tracking (처리된 파일 추적)
+CREATE TABLE IF NOT EXISTS processed_files (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    filename TEXT UNIQUE NOT NULL,
+    file_type TEXT NOT NULL,  -- 'attendance', 'risk', 'tbm'
+    processed_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Performance indexes
 CREATE INDEX IF NOT EXISTS idx_attendance_date_site ON attendance_logs(work_date, site_id);
 CREATE INDEX IF NOT EXISTS idx_attendance_partner ON attendance_logs(partner_id);
@@ -92,6 +100,7 @@ CREATE INDEX IF NOT EXISTS idx_risk_docs_site ON risk_docs(site_id);
 CREATE INDEX IF NOT EXISTS idx_risk_items_doc ON risk_items(doc_id);
 CREATE INDEX IF NOT EXISTS idx_tbm_date_site ON tbm_logs(work_date, site_id);
 CREATE INDEX IF NOT EXISTS idx_tbm_participants ON tbm_participants(tbm_id);
+CREATE INDEX IF NOT EXISTS idx_processed_files_name ON processed_files(filename);
 """
 
 
@@ -117,6 +126,7 @@ def drop_all_tables(db_path: Path) -> None:
     cursor = conn.cursor()
 
     tables = [
+        "processed_files",
         "tbm_participants",
         "tbm_logs",
         "risk_confirmations",

@@ -21,13 +21,24 @@ import DateNavigator from './components/DateNavigator';
 // API mode flag - set to true to use real API, false for mock data
 const USE_API = true;
 
+// History state interface
+interface HistoryState {
+  menu: ActiveMenu;
+  siteId: string;
+  isAllSites: boolean;
+}
+
 const App: React.FC = () => {
   const [activeMenu, setActiveMenu] = useState<ActiveMenu>(ActiveMenu.DASHBOARD);
   const [currentTab, setCurrentTab] = useState<TimePeriod>(TimePeriod.DAILY);
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [selectedSite, setSelectedSite] = useState<Site>(ALL_SITES_MOCK);
   const [isSiteOpen, setIsSiteOpen] = useState(false);
+  const [siteSearchQuery, setSiteSearchQuery] = useState('');
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // History navigation을 위한 ref (무한 루프 방지)
+  const isNavigatingBack = useRef(false);
 
   // API sites state
   const [apiSites, setApiSites] = useState<ApiSiteType[]>([]);
@@ -63,10 +74,68 @@ const App: React.FC = () => {
   // Get available sites for dropdown
   const availableSites = USE_API ? apiSites : MOCK_SITES;
 
+  // 초기 히스토리 상태 설정
+  useEffect(() => {
+    const initialState: HistoryState = {
+      menu: activeMenu,
+      siteId: 'all',
+      isAllSites: true
+    };
+    window.history.replaceState(initialState, '');
+  }, []);
+
+  // 현장 선택 시 히스토리에 상태 추가
+  const handleSiteSelect = (site: Site) => {
+    // 뒤로가기로 인한 변경이면 히스토리에 추가하지 않음
+    if (isNavigatingBack.current) {
+      isNavigatingBack.current = false;
+      setSelectedSite(site);
+      return;
+    }
+
+    setSelectedSite(site);
+
+    // 개별 현장 선택 시에만 히스토리에 추가
+    if (site.id !== 'all') {
+      const newState: HistoryState = {
+        menu: activeMenu,
+        siteId: site.id,
+        isAllSites: false
+      };
+      window.history.pushState(newState, '');
+    }
+  };
+
+  // 브라우저 뒤로가기 이벤트 핸들러
+  useEffect(() => {
+    const handlePopState = (event: PopStateEvent) => {
+      const state = event.state as HistoryState | null;
+
+      // 현재 개별 현장이 선택되어 있으면 전체 현장으로 이동
+      if (selectedSite.id !== 'all') {
+        isNavigatingBack.current = true;
+        setSelectedSite(ALL_SITES_MOCK);
+
+        // 히스토리 상태 유지를 위해 현재 전체 현장 상태를 다시 설정
+        const allSitesState: HistoryState = {
+          menu: activeMenu,
+          siteId: 'all',
+          isAllSites: true
+        };
+        window.history.replaceState(allSitesState, '');
+      }
+      // 이미 전체 현장이면 브라우저 기본 동작 (페이지 이탈)
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [selectedSite.id, activeMenu]);
+
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setIsSiteOpen(false);
+        setSiteSearchQuery('');
       }
     }
     document.addEventListener("mousedown", handleClickOutside);
@@ -154,39 +223,58 @@ const App: React.FC = () => {
               
               {isSiteOpen && (
                 <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-md shadow-2xl overflow-hidden z-[100] animate-in fade-in zoom-in-95 duration-200">
-                  <div
-                    onClick={() => { setSelectedSite(ALL_SITES_MOCK); setIsSiteOpen(false); }}
-                    className={`px-4 py-3 text-sm font-bold border-b border-gray-100 cursor-pointer hover:bg-gray-50 ${selectedSite.id === 'all' ? 'text-blue-600 bg-blue-50' : 'text-slate-600'}`}
-                  >
-                    전체 현장
+                  {/* 검색 input - 상단 고정 */}
+                  <div className="sticky top-0 bg-white border-b border-gray-200 px-3 py-2 z-10">
+                    <input
+                      type="text"
+                      placeholder="현장명 검색..."
+                      value={siteSearchQuery}
+                      onChange={(e) => setSiteSearchQuery(e.target.value)}
+                      onClick={(e) => e.stopPropagation()}
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent"
+                      autoFocus
+                    />
                   </div>
-                  {apiSitesLoading ? (
-                    <div className="px-4 py-3 text-sm text-gray-400">로딩중...</div>
-                  ) : USE_API ? (
-                    apiSites.map((site) => (
-                      <div
-                        key={site.id}
-                        onClick={() => { setSelectedSite(apiSiteToLegacySite(site)); setIsSiteOpen(false); }}
-                        className={`px-4 py-2.5 text-sm font-medium hover:bg-gray-50 cursor-pointer border-b border-gray-50 last:border-none ${
-                          selectedSite.id === String(site.id) ? 'bg-blue-50 text-blue-600 font-bold' : 'text-slate-700'
-                        }`}
-                      >
-                        {site.name}
-                      </div>
-                    ))
-                  ) : (
-                    MOCK_SITES.map((site) => (
-                      <div
-                        key={site.id}
-                        onClick={() => { setSelectedSite(site); setIsSiteOpen(false); }}
-                        className={`px-4 py-2.5 text-sm font-medium hover:bg-gray-50 cursor-pointer border-b border-gray-50 last:border-none ${
-                          selectedSite.id === site.id ? 'bg-blue-50 text-blue-600 font-bold' : 'text-slate-700'
-                        }`}
-                      >
-                        {site.name}
-                      </div>
-                    ))
-                  )}
+                  {/* 스크롤 가능한 목록 영역 */}
+                  <div className="max-h-[350px] overflow-y-auto">
+                    <div
+                      onClick={() => { handleSiteSelect(ALL_SITES_MOCK); setIsSiteOpen(false); setSiteSearchQuery(''); }}
+                      className={`px-4 py-3 text-sm font-bold border-b border-gray-100 cursor-pointer hover:bg-gray-50 ${selectedSite.id === 'all' ? 'text-blue-600 bg-blue-50' : 'text-slate-600'}`}
+                    >
+                      전체 현장
+                    </div>
+                    {apiSitesLoading ? (
+                      <div className="px-4 py-3 text-sm text-gray-400">로딩중...</div>
+                    ) : USE_API ? (
+                      apiSites
+                        .filter((site) => site.name.toLowerCase().includes(siteSearchQuery.toLowerCase()))
+                        .map((site) => (
+                          <div
+                            key={site.id}
+                            onClick={() => { handleSiteSelect(apiSiteToLegacySite(site)); setIsSiteOpen(false); setSiteSearchQuery(''); }}
+                            className={`px-4 py-2.5 text-sm font-medium hover:bg-gray-50 cursor-pointer border-b border-gray-50 last:border-none ${
+                              selectedSite.id === String(site.id) ? 'bg-blue-50 text-blue-600 font-bold' : 'text-slate-700'
+                            }`}
+                          >
+                            {site.name}
+                          </div>
+                        ))
+                    ) : (
+                      MOCK_SITES
+                        .filter((site) => site.name.toLowerCase().includes(siteSearchQuery.toLowerCase()))
+                        .map((site) => (
+                          <div
+                            key={site.id}
+                            onClick={() => { handleSiteSelect(site); setIsSiteOpen(false); setSiteSearchQuery(''); }}
+                            className={`px-4 py-2.5 text-sm font-medium hover:bg-gray-50 cursor-pointer border-b border-gray-50 last:border-none ${
+                              selectedSite.id === site.id ? 'bg-blue-50 text-blue-600 font-bold' : 'text-slate-700'
+                            }`}
+                          >
+                            {site.name}
+                          </div>
+                        ))
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -226,25 +314,27 @@ const App: React.FC = () => {
           <div className="max-w-[1600px] w-full mx-auto px-6 py-8">
             <div className="transition-all duration-300">
               {activeMenu === ActiveMenu.DASHBOARD && (
-                <DashboardView 
-                  selectedSite={selectedSite} 
-                  selectedDate={selectedDate} 
-                  period={currentTab} 
+                <DashboardView
+                  selectedSite={selectedSite}
+                  selectedDate={selectedDate}
+                  period={currentTab}
+                  onSiteSelect={handleSiteSelect}
                 />
               )}
               {activeMenu === ActiveMenu.RISK_ASSESSMENT && (
-                <RiskAssessmentView 
-                  selectedSite={selectedSite} 
-                  selectedDate={selectedDate} 
-                  period={currentTab} 
+                <RiskAssessmentView
+                  selectedSite={selectedSite}
+                  selectedDate={selectedDate}
+                  period={currentTab}
+                  onSiteSelect={handleSiteSelect}
                 />
               )}
               {activeMenu === ActiveMenu.TBM && (
-                <TbmMonitoringView 
-                  period={currentTab} 
-                  selectedDate={selectedDate} 
+                <TbmMonitoringView
+                  period={currentTab}
+                  selectedDate={selectedDate}
                   selectedSite={selectedSite}
-                  onSiteSelect={setSelectedSite}
+                  onSiteSelect={handleSiteSelect}
                 />
               )}
             </div>

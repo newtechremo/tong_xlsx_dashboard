@@ -6,7 +6,7 @@ import {
   addWeeks, 
   addMonths, 
 } from 'date-fns';
-import { CalendarDays, ChevronDown } from 'lucide-react';
+import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
 import { TimePeriod } from '../types';
 
 // FIX: Helper functions to replace missing date-fns exports (startOfWeek, startOfMonth, parseISO) 
@@ -132,22 +132,53 @@ const DateNavigator: React.FC<DateNavigatorProps> = ({
         )}
 
         {period === TimePeriod.MONTHLY && (
-          <div className="relative group">
-            <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
-              <CalendarDays size={16} />
-            </div>
-            <select
-              // FIX: selectedDate를 기반으로 'YYYY-MM-01' 형식을 만들어 option value와 매칭시킵니다.
-              value={format(startOfMonth(date), 'yyyy-MM-01')}
-              onChange={(e) => onDateChange(e.target.value)}
-              className="pl-10 pr-10 py-2 bg-white border border-gray-300 rounded-md text-sm font-bold text-slate-700 appearance-none cursor-pointer hover:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100 transition-all shadow-sm"
+          <div className="flex items-center gap-1">
+            {/* 이전 연도 버튼 */}
+            <button
+              onClick={() => {
+                const prevYear = new Date(date.getFullYear() - 1, date.getMonth(), 1);
+                onDateChange(format(prevYear, 'yyyy-MM-01'));
+              }}
+              className="p-2 bg-white border border-gray-300 rounded-md hover:bg-gray-50 hover:border-blue-400 transition-all shadow-sm"
+              title="이전 연도"
             >
-              {generateMonths().map((m) => (
-                <option key={m.id} value={m.value}>{m.label}</option>
-              ))}
-            </select>
-            <div className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
-              <ChevronDown size={16} />
+              <ChevronLeft size={16} className="text-gray-600" />
+            </button>
+
+            {/* 연도 표시 */}
+            <div className="px-3 py-2 bg-gray-100 border border-gray-300 rounded-md text-sm font-bold text-slate-700 min-w-[70px] text-center">
+              {date.getFullYear()}년
+            </div>
+
+            {/* 다음 연도 버튼 */}
+            <button
+              onClick={() => {
+                const nextYear = new Date(date.getFullYear() + 1, date.getMonth(), 1);
+                onDateChange(format(nextYear, 'yyyy-MM-01'));
+              }}
+              className="p-2 bg-white border border-gray-300 rounded-md hover:bg-gray-50 hover:border-blue-400 transition-all shadow-sm"
+              title="다음 연도"
+            >
+              <ChevronRight size={16} className="text-gray-600" />
+            </button>
+
+            {/* 월 선택 드롭다운 */}
+            <div className="relative group">
+              <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
+                <CalendarDays size={16} />
+              </div>
+              <select
+                value={format(startOfMonth(date), 'yyyy-MM-01')}
+                onChange={(e) => onDateChange(e.target.value)}
+                className="pl-10 pr-10 py-2 bg-white border border-gray-300 rounded-md text-sm font-bold text-slate-700 appearance-none cursor-pointer hover:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100 transition-all shadow-sm"
+              >
+                {generateMonths().map((m) => (
+                  <option key={m.id} value={m.value}>{m.label}</option>
+                ))}
+              </select>
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
+                <ChevronDown size={16} />
+              </div>
             </div>
           </div>
         )}

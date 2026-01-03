@@ -10,7 +10,8 @@ import {
   ListFilter,
   HelpCircle,
   ChevronDown,
-  ChevronRight
+  ChevronRight,
+  ArrowUpRight
 } from 'lucide-react';
 import { mockRiskDocs, MOCK_SITES } from '../mockData';
 import { riskApi } from '../api/client';
@@ -40,11 +41,12 @@ interface RiskAssessmentViewProps {
   selectedSite: Site;
   selectedDate: string;
   period: TimePeriod;
+  onSiteSelect?: (site: Site) => void;
 }
 
 const normalize = (str: string) => str.replace(/\s+/g, '').trim();
 
-const RiskAssessmentView: React.FC<RiskAssessmentViewProps> = ({ selectedSite, selectedDate, period }) => {
+const RiskAssessmentView: React.FC<RiskAssessmentViewProps> = ({ selectedSite, selectedDate, period, onSiteSelect }) => {
   const isAllSites = selectedSite.id === 'all';
   const isDaily = period === TimePeriod.DAILY;
 
@@ -343,6 +345,19 @@ const RiskAssessmentView: React.FC<RiskAssessmentViewProps> = ({ selectedSite, s
                           <span className="font-black text-blue-800 text-lg group-hover:text-blue-600 transition-colors">
                             {site.label}
                           </span>
+                          {onSiteSelect && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const siteObj: Site = { id: site.id, name: site.label, companies: [] };
+                                onSiteSelect(siteObj);
+                              }}
+                              className="p-1 text-gray-400 hover:text-blue-600 hover:bg-blue-100 rounded transition-colors ml-1"
+                              title="해당 현장으로 이동"
+                            >
+                              <ArrowUpRight size={14} />
+                            </button>
+                          )}
                           <span className="text-sm text-slate-500 ml-2">({site.total_comp_count}개 업체)</span>
                         </div>
                       </td>
@@ -575,7 +590,15 @@ const RiskAssessmentView: React.FC<RiskAssessmentViewProps> = ({ selectedSite, s
         <RiskKpiCard title="참여업체" value={`${riskKpis.participatingCompanies}개`} icon={Building2} color="blue" />
         <RiskKpiCard title="위험성평가 문서" value={`${riskKpis.activeDocuments}건`} icon={FileText} color="slate" />
         <RiskKpiCard title="추가위험요인" value={`${riskKpis.riskFactors}건`} icon={Search} color="red" isHighlight={riskKpis.riskFactors > 0} tooltip="수시 위험성평가 데이터만 반영됩니다." />
-        <RiskKpiCard title="조치/이행확인" value={`${riskKpis.actionResults}건`} icon={ShieldCheck} color="green" isHighlight={riskKpis.actionResults > 0} tooltip="수시 위험성평가 데이터만 반영됩니다." />
+        <RiskKpiCard
+          title="조치/이행확인"
+          value={`${riskKpis.actionResults}건`}
+          icon={ShieldCheck}
+          color="green"
+          isHighlight={riskKpis.actionResults > 0}
+          tooltip="수시 위험성평가 데이터만 반영됩니다."
+          actionRate={riskKpis.riskFactors > 0 ? (riskKpis.actionResults / riskKpis.riskFactors) * 100 : 0}
+        />
       </div>
 
       {(period === TimePeriod.WEEKLY || period === TimePeriod.MONTHLY) && (
@@ -658,9 +681,10 @@ interface RiskKpiCardProps {
   color: 'blue' | 'slate' | 'red' | 'green';
   isHighlight?: boolean;
   tooltip?: string;
+  actionRate?: number; // 조치이행율 (0-100)
 }
 
-const RiskKpiCard: React.FC<RiskKpiCardProps> = ({ title, value, icon: Icon, color, isHighlight, tooltip }) => {
+const RiskKpiCard: React.FC<RiskKpiCardProps> = ({ title, value, icon: Icon, color, isHighlight, tooltip, actionRate }) => {
   const textColors = {
     blue: 'text-blue-600',
     slate: 'text-gray-900',
@@ -690,7 +714,12 @@ const RiskKpiCard: React.FC<RiskKpiCardProps> = ({ title, value, icon: Icon, col
               </>
             )}
           </div>
-          <h4 className={`text-5xl font-extrabold tracking-tighter ${textColors[color]}`}>{value}</h4>
+          <div className="flex items-baseline gap-2">
+            <h4 className={`text-5xl font-extrabold tracking-tighter ${textColors[color]}`}>{value}</h4>
+            {actionRate !== undefined && (
+              <span className="text-base font-bold text-slate-800">(조치이행율: {actionRate.toFixed(1)}%)</span>
+            )}
+          </div>
         </div>
         <div className={`p-4 rounded-2xl ${iconStyles[color]}`}>
           <Icon size={28} />

@@ -3,15 +3,19 @@ ETL Orchestration Script for HyunJangTong 2.0
 Processes Excel files from data_repository and loads into SQLite database.
 
 Usage:
-    python -m backend.etl.run_etl
+    python -m backend.etl.run_etl           # 증분 처리 (새 파일만)
+    python -m backend.etl.run_etl --reset   # 전체 재처리 (DB 초기화)
+
     or
     python backend/etl/run_etl.py
+    python backend/etl/run_etl.py --reset
 """
 
 import sys
+import argparse
 import sqlite3
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Set
 from datetime import datetime
 
 # Add parent directory to path for imports when running as script
@@ -173,26 +177,58 @@ def insert_tbm_records(conn: sqlite3.Connection, parsed_data: Dict[str, Any]) ->
     return count
 
 
-def process_attendance_files(conn: sqlite3.Connection, directory: Path) -> Dict[str, int]:
-    """Process all attendance Excel files."""
-    stats = {"files": 0, "records": 0, "errors": 0}
+def get_processed_files(conn: sqlite3.Connection, file_type: str) -> Set[str]:
+    """Get set of already processed filenames for a given type."""
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT filename FROM processed_files WHERE file_type = ?",
+        (file_type,)
+    )
+    return {row[0] for row in cursor.fetchall()}
+
+
+def mark_file_processed(conn: sqlite3.Connection, filename: str, file_type: str) -> None:
+    """Mark a file as processed."""
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT OR IGNORE INTO processed_files (filename, file_type) VALUES (?, ?)",
+        (filename, file_type)
+    )
+
+
+def process_attendance_files(conn: sqlite3.Connection, directory: Path, incremental: bool = True) -> Dict[str, int]:
+    """Process attendance Excel files. If incremental=True, skip already processed files."""
+    stats = {"files": 0, "records": 0, "errors": 0, "skipped": 0}
 
     if not directory.exists():
         print(f"Warning: Attendance directory not found: {directory}")
         return stats
 
     xlsx_files = list(directory.glob("*.xlsx"))
-    print(f"Found {len(xlsx_files)} attendance files")
+    total_files = len(xlsx_files)
+
+    # Get already processed files if incremental mode
+    processed = get_processed_files(conn, "attendance") if incremental else set()
+    if incremental and processed:
+        print(f"Found {total_files} attendance files ({len(processed)} already processed)")
+    else:
+        print(f"Found {total_files} attendance files")
 
     for file_path in xlsx_files:
+        # Skip already processed files in incremental mode
+        if incremental and file_path.name in processed:
+            stats["skipped"] += 1
+            continue
+
         try:
             parser = AttendanceParser(str(file_path))
             parsed = parser.run()
             count = insert_attendance_records(conn, parsed)
+            mark_file_processed(conn, file_path.name, "attendance")
             stats["files"] += 1
             stats["records"] += count
             if stats["files"] % 100 == 0:
-                print(f"  Processed {stats['files']} attendance files...")
+                print(f"  Processed {stats['files']} new attendance files...")
         except Exception as e:
             stats["errors"] += 1
             print(f"  Error processing {file_path.name}: {e}")
@@ -200,22 +236,35 @@ def process_attendance_files(conn: sqlite3.Connection, directory: Path) -> Dict[
     return stats
 
 
-def process_risk_files(conn: sqlite3.Connection, directory: Path) -> Dict[str, int]:
-    """Process all risk assessment Excel files."""
-    stats = {"files": 0, "items": 0, "confirmations": 0, "errors": 0}
+def process_risk_files(conn: sqlite3.Connection, directory: Path, incremental: bool = True) -> Dict[str, int]:
+    """Process risk assessment Excel files. If incremental=True, skip already processed files."""
+    stats = {"files": 0, "items": 0, "confirmations": 0, "errors": 0, "skipped": 0}
 
     if not directory.exists():
         print(f"Warning: Risk assessment directory not found: {directory}")
         return stats
 
     xlsx_files = [f for f in directory.glob("*.xlsx") if not f.name.startswith("~$")]
-    print(f"Found {len(xlsx_files)} risk assessment files")
+    total_files = len(xlsx_files)
+
+    # Get already processed files if incremental mode
+    processed = get_processed_files(conn, "risk") if incremental else set()
+    if incremental and processed:
+        print(f"Found {total_files} risk assessment files ({len(processed)} already processed)")
+    else:
+        print(f"Found {total_files} risk assessment files")
 
     for file_path in xlsx_files:
+        # Skip already processed files in incremental mode
+        if incremental and file_path.name in processed:
+            stats["skipped"] += 1
+            continue
+
         try:
             parser = RiskAssessmentParser(str(file_path))
             parsed = parser.run()
             counts = insert_risk_records(conn, parsed)
+            mark_file_processed(conn, file_path.name, "risk")
             stats["files"] += 1
             stats["items"] += counts["items"]
             stats["confirmations"] += counts["confirmations"]
@@ -226,26 +275,39 @@ def process_risk_files(conn: sqlite3.Connection, directory: Path) -> Dict[str, i
     return stats
 
 
-def process_tbm_files(conn: sqlite3.Connection, directory: Path) -> Dict[str, int]:
-    """Process all TBM Excel files."""
-    stats = {"files": 0, "records": 0, "errors": 0}
+def process_tbm_files(conn: sqlite3.Connection, directory: Path, incremental: bool = True) -> Dict[str, int]:
+    """Process TBM Excel files. If incremental=True, skip already processed files."""
+    stats = {"files": 0, "records": 0, "errors": 0, "skipped": 0}
 
     if not directory.exists():
         print(f"Warning: TBM directory not found: {directory}")
         return stats
 
     xlsx_files = list(directory.glob("*.xlsx"))
-    print(f"Found {len(xlsx_files)} TBM files")
+    total_files = len(xlsx_files)
+
+    # Get already processed files if incremental mode
+    processed = get_processed_files(conn, "tbm") if incremental else set()
+    if incremental and processed:
+        print(f"Found {total_files} TBM files ({len(processed)} already processed)")
+    else:
+        print(f"Found {total_files} TBM files")
 
     for file_path in xlsx_files:
+        # Skip already processed files in incremental mode
+        if incremental and file_path.name in processed:
+            stats["skipped"] += 1
+            continue
+
         try:
             parser = TbmParser(str(file_path))
             parsed = parser.run()
             count = insert_tbm_records(conn, parsed)
+            mark_file_processed(conn, file_path.name, "tbm")
             stats["files"] += 1
             stats["records"] += count
             if stats["files"] % 100 == 0:
-                print(f"  Processed {stats['files']} TBM files...")
+                print(f"  Processed {stats['files']} new TBM files...")
         except Exception as e:
             stats["errors"] += 1
             print(f"  Error processing {file_path.name}: {e}")
@@ -253,22 +315,28 @@ def process_tbm_files(conn: sqlite3.Connection, directory: Path) -> Dict[str, in
     return stats
 
 
-def run_full_etl(reset_db: bool = True) -> None:
+def run_full_etl(reset_db: bool = False) -> None:
     """
     Main ETL orchestration function.
 
     Args:
-        reset_db: If True, drop all tables and recreate schema
+        reset_db: If True, drop all tables and recreate schema (full re-process)
+                  If False (default), incremental processing (new files only)
     """
+    incremental = not reset_db
+    mode_str = "FULL RESET" if reset_db else "INCREMENTAL"
+
     print("=" * 60)
-    print("HyunJangTong 2.0 ETL Process")
+    print(f"HyunJangTong 2.0 ETL Process [{mode_str}]")
     print("=" * 60)
     start_time = datetime.now()
 
     # Initialize database
     if reset_db:
-        print("\n[1/5] Resetting database...")
+        print("\n[1/5] Resetting database (full re-process)...")
         drop_all_tables(DATABASE_PATH)
+    else:
+        print("\n[1/5] Incremental mode - keeping existing data...")
 
     print("\n[2/5] Initializing database schema...")
     init_db(DATABASE_PATH)
@@ -279,18 +347,27 @@ def run_full_etl(reset_db: bool = True) -> None:
     try:
         # Process attendance files
         print("\n[3/5] Processing attendance files...")
-        att_stats = process_attendance_files(conn, ATTENDANCE_DIR)
-        print(f"  Completed: {att_stats['files']} files, {att_stats['records']} records, {att_stats['errors']} errors")
+        att_stats = process_attendance_files(conn, ATTENDANCE_DIR, incremental=incremental)
+        if incremental:
+            print(f"  Completed: {att_stats['files']} new files, {att_stats['records']} records (skipped {att_stats['skipped']} existing)")
+        else:
+            print(f"  Completed: {att_stats['files']} files, {att_stats['records']} records, {att_stats['errors']} errors")
 
         # Process risk assessment files
         print("\n[4/5] Processing risk assessment files...")
-        risk_stats = process_risk_files(conn, RISK_ASSESSMENT_DIR)
-        print(f"  Completed: {risk_stats['files']} files, {risk_stats['items']} items, {risk_stats['confirmations']} confirmations, {risk_stats['errors']} errors")
+        risk_stats = process_risk_files(conn, RISK_ASSESSMENT_DIR, incremental=incremental)
+        if incremental:
+            print(f"  Completed: {risk_stats['files']} new files, {risk_stats['items']} items (skipped {risk_stats['skipped']} existing)")
+        else:
+            print(f"  Completed: {risk_stats['files']} files, {risk_stats['items']} items, {risk_stats['confirmations']} confirmations")
 
         # Process TBM files
         print("\n[5/5] Processing TBM files...")
-        tbm_stats = process_tbm_files(conn, TBM_DIR)
-        print(f"  Completed: {tbm_stats['files']} files, {tbm_stats['records']} participants, {tbm_stats['errors']} errors")
+        tbm_stats = process_tbm_files(conn, TBM_DIR, incremental=incremental)
+        if incremental:
+            print(f"  Completed: {tbm_stats['files']} new files, {tbm_stats['records']} participants (skipped {tbm_stats['skipped']} existing)")
+        else:
+            print(f"  Completed: {tbm_stats['files']} files, {tbm_stats['records']} participants, {tbm_stats['errors']} errors")
 
         # Commit all changes
         conn.commit()
@@ -300,11 +377,12 @@ def run_full_etl(reset_db: bool = True) -> None:
         print("\n" + "=" * 60)
         print("ETL COMPLETE")
         print("=" * 60)
+        print(f"Mode: {mode_str}")
         print(f"Database: {DATABASE_PATH}")
         print(f"Total time: {elapsed}")
-        print("\nSummary:")
+        print("\nNew files processed:")
         print(f"  Attendance: {att_stats['files']} files, {att_stats['records']} records")
-        print(f"  Risk Assessment: {risk_stats['files']} files, {risk_stats['items']} items, {risk_stats['confirmations']} confirmations")
+        print(f"  Risk Assessment: {risk_stats['files']} files, {risk_stats['items']} items")
         print(f"  TBM: {tbm_stats['files']} files, {tbm_stats['records']} participants")
 
         # Print record counts
@@ -319,17 +397,41 @@ def run_full_etl(reset_db: bool = True) -> None:
         risk_docs_count = cursor.fetchone()[0]
         cursor.execute("SELECT COUNT(*) FROM tbm_logs")
         tbm_count = cursor.fetchone()[0]
+        cursor.execute("SELECT COUNT(*) FROM processed_files")
+        processed_count = cursor.fetchone()[0]
 
-        print(f"\nDatabase records:")
+        print(f"\nTotal database records:")
         print(f"  Sites: {sites_count}")
         print(f"  Partners: {partners_count}")
         print(f"  Attendance logs: {attendance_count}")
         print(f"  Risk documents: {risk_docs_count}")
         print(f"  TBM logs: {tbm_count}")
+        print(f"  Processed files tracked: {processed_count}")
 
     finally:
         conn.close()
 
 
+def main():
+    """CLI entry point with argument parsing."""
+    parser = argparse.ArgumentParser(
+        description="HyunJangTong 2.0 ETL - Process Excel files into database",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python -m backend.etl.run_etl          # Incremental (new files only)
+  python -m backend.etl.run_etl --reset  # Full reset (re-process all)
+        """
+    )
+    parser.add_argument(
+        "--reset",
+        action="store_true",
+        help="Reset database and re-process all files (default: incremental)"
+    )
+
+    args = parser.parse_args()
+    run_full_etl(reset_db=args.reset)
+
+
 if __name__ == "__main__":
-    run_full_etl(reset_db=True)
+    main()
