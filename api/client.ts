@@ -29,8 +29,8 @@ const getApiBase = (): string => {
   if (import.meta.env.VITE_API_URL) {
     return import.meta.env.VITE_API_URL;
   }
-  const { protocol, hostname } = window.location;
-  return `${protocol}//${hostname}:3002/api`;
+  // Use same origin for API (nginx proxies /backend-api to backend)
+  return '/backend-api';
 };
 
 const API_BASE = getApiBase();
@@ -42,17 +42,22 @@ async function fetchApi<T>(
   endpoint: string,
   params?: Record<string, string | number | undefined>
 ): Promise<T> {
-  const url = new URL(`${API_BASE}${endpoint}`);
+  let url = `${API_BASE}${endpoint}`;
 
   if (params) {
+    const searchParams = new URLSearchParams();
     Object.entries(params).forEach(([key, value]) => {
       if (value !== undefined && value !== null) {
-        url.searchParams.append(key, String(value));
+        searchParams.append(key, String(value));
       }
     });
+    const queryString = searchParams.toString();
+    if (queryString) {
+      url += `?${queryString}`;
+    }
   }
 
-  const response = await fetch(url.toString());
+  const response = await fetch(url);
 
   if (!response.ok) {
     const errorText = await response.text();

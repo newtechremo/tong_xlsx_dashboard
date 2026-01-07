@@ -18,10 +18,13 @@ npm run preview  # Preview production build
 
 ### Backend
 ```bash
-cd backend
-pip install -r requirements.txt     # Install Python dependencies
-python -m etl.run_etl               # Run ETL to populate database
-uvicorn main:app --reload --port 3002   # Start API server
+# Activate conda environment
+conda activate tong-dashboard
+
+# Run from source directory (not backend/)
+pip install -r backend/requirements.txt     # Install Python dependencies
+python -m backend.etl.run_etl               # Run ETL to populate database
+PYTHONPATH=. uvicorn backend.main:app --reload --host 0.0.0.0 --port 3002   # Start API server
 ```
 
 **Environment:** Set `VITE_API_URL` in `.env.local` for API endpoint (defaults to `http://localhost:3002/api`)
@@ -36,7 +39,7 @@ uvicorn main:app --reload --port 3002   # Start API server
 - date-fns for date utilities
 
 ### Backend
-- Python 3.10+ with FastAPI
+- Python 3.10+ with FastAPI (conda env: `tong-dashboard`)
 - SQLite database (`backend/database/safety.db`)
 - openpyxl for Excel parsing
 
@@ -123,3 +126,48 @@ Query params: `site_id`, `date` (YYYY-MM-DD), `period` (DAILY/WEEKLY/MONTHLY)
 - Type enums: `TimePeriod`, `ActiveMenu`
 - Domain interfaces: `Site`, `Company`, `Task`, `DailyStat`
 - Use `useMemo` for computed/aggregated data
+
+## Deployment
+
+### Production URLs
+- **Domain:** https://con-admin.tongpeoples.com
+- **Frontend Port:** 3001
+- **Backend Port:** 3002
+
+### Server Execution
+```bash
+# Frontend (background)
+npm run dev &
+
+# Backend (background, from source directory)
+source ~/anaconda3/etc/profile.d/conda.sh && conda activate tong-dashboard
+PYTHONPATH=. uvicorn backend.main:app --reload --host 0.0.0.0 --port 3002 &
+```
+
+### Nginx Configuration
+Location: `/etc/nginx/sites-available/con-admin.tongpeoples.com`
+
+```nginx
+location /backend-api/ {
+    proxy_pass http://localhost:3002/api/;
+    # ... proxy headers ...
+}
+
+location / {
+    proxy_pass http://localhost:3001;
+    # ... proxy headers ...
+}
+```
+
+### API URL Mapping
+- Frontend requests: `/backend-api/*`
+- Nginx proxies to: `http://localhost:3002/api/*`
+- Configured in: `api/client.ts` → `getApiBase()` returns `/backend-api`
+
+### SSL Certificate
+- Provider: Let's Encrypt (Certbot)
+- Auto-renewal: Enabled
+- Cert path: `/etc/letsencrypt/live/con-admin.tongpeoples.com/`
+
+### Deployment Guide
+See `/home/finefit-temp/Desktop/project/DEPLOYMENT_GUIDE.md` for general deployment instructions.
