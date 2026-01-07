@@ -30,7 +30,7 @@ const getApiBase = (): string => {
     return import.meta.env.VITE_API_URL;
   }
   const { protocol, hostname } = window.location;
-  return `${protocol}//${hostname}:8000/api`;
+  return `${protocol}//${hostname}:3002/api`;
 };
 
 const API_BASE = getApiBase();

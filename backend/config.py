@@ -16,12 +16,10 @@ TBM_DIR = DATA_REPOSITORY / "03_tbm"
 
 # API settings
 API_PREFIX = "/api"
+API_PORT = 3002
 CORS_ORIGINS = [
-    "http://localhost:3000",
-    "http://localhost:5173",
-    "http://127.0.0.1:3000",
-    "http://127.0.0.1:5173",
-    "http://172.20.231.119:3000",
-    "http://172.20.231.119:5173",
+    "http://localhost:3001",
+    "http://127.0.0.1:3001",
+    "http://172.20.231.119:3001",
     "*",  # Allow all origins for development
 ]

@@ -11,7 +11,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### Frontend
 ```bash
 npm install      # Install dependencies
-npm run dev      # Start dev server (Vite, port 3000)
+npm run dev      # Start dev server (Vite, port 3001)
 npm run build    # Production build
 npm run preview  # Preview production build
 ```
@@ -21,10 +21,10 @@ npm run preview  # Preview production build
 cd backend
 pip install -r requirements.txt     # Install Python dependencies
 python -m etl.run_etl               # Run ETL to populate database
-uvicorn main:app --reload --port 8000   # Start API server
+uvicorn main:app --reload --port 3002   # Start API server
 ```
 
-**Environment:** Set `VITE_API_URL` in `.env.local` for API endpoint (defaults to `http://localhost:8000/api`)
+**Environment:** Set `VITE_API_URL` in `.env.local` for API endpoint (defaults to `http://localhost:3002/api`)
 
 ## Tech Stack
 
