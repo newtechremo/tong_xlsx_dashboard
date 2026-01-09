@@ -36,16 +36,22 @@ jobs:
             cd ..
 
             echo "4. Frontend 재시작"
-            pkill -f "node.*vite" || true
+            # 포트 3001 사용하는 프로세스 종료
+            fuser -k 3001/tcp 2>/dev/null || true
             sleep 2
             nohup npm run dev > frontend.log 2>&1 &
+            disown
 
             echo "5. Backend 재시작"
-            pkill -f "uvicorn.*main:app" || true
+            # 포트 3002 사용하는 프로세스 종료
+            fuser -k 3002/tcp 2>/dev/null || true
             sleep 2
             cd backend
             nohup uvicorn main:app --host 0.0.0.0 --port 3002 > ../backend.log 2>&1 &
+            disown
 
             echo "========== 배포 완료 =========="
             sleep 3
-            ps aux | grep -E "vite|uvicorn" | grep -v grep
+            echo "실행 중인 프로세스:"
+            ps aux | grep -E "vite|uvicorn" | grep -v grep || echo "프로세스 확인 불가"
+            echo "완료"
