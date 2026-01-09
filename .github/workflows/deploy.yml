@@ -4,15 +4,6 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
-    inputs:
-      run_etl:
-        description: 'ETL 실행 (DB 업데이트)'
-        required: false
-        default: 'no'
-        type: choice
-        options:
-          - 'no'
-          - 'yes'
 
 jobs:
   deploy:
@@ -43,23 +34,6 @@ jobs:
             cd backend
             pip install -r requirements.txt
             cd ..
-
-            # ETL 실행 (요청 시)
-            RUN_ETL="${{ inputs.run_etl }}"
-            if [ "$RUN_ETL" = "yes" ]; then
-              echo "3.5. ETL 실행"
-              if [ -d "data_repository" ]; then
-                # 기존 DB 백업
-                if [ -f "backend/database/safety.db" ]; then
-                  cp backend/database/safety.db backend/database/safety.db.backup.$(date +%Y%m%d_%H%M%S)
-                  echo "기존 DB 백업 완료"
-                fi
-                PYTHONPATH=. python -m backend.etl.run_etl
-                echo "ETL 완료"
-              else
-                echo "WARNING: data_repository 폴더가 없어 ETL 건너뜀"
-              fi
-            fi
 
             echo "4. Frontend 재시작"
             # 포트 3001 사용하는 프로세스 종료
