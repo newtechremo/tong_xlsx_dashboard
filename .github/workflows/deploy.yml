@@ -28,7 +28,7 @@ jobs:
             npm install
 
             echo "3. Backend 의존성 설치"
-            source ~/miniconda3/etc/profile.d/conda.sh
+            source ~/anaconda3/etc/profile.d/conda.sh
             conda activate tong-dashboard
             cd backend
             pip install -r requirements.txt
