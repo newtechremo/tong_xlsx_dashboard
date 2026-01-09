@@ -1,40 +1,46 @@
 #!/bin/bash
 #
-# 서버에 data_repository 업로드 스크립트
+# 서버에 데이터 파일 업로드 스크립트
 # 사용법: ./scripts/sync-data.sh
 #
 
-# 설정
+# ===== 설정 (프로젝트에 맞게 수정) =====
 SERVER_HOST="49.168.236.221"
 SERVER_PORT="6201"
 SERVER_USER="finefit-temp"
 SERVER_PATH="/home/finefit-temp/Desktop/project/tong_xlsx_dashboard"
 
+# 업로드할 파일/폴더 목록
+UPLOAD_ITEMS=(
+    "data_repository"
+    "backend/database/safety.db"
+)
+# ========================================
+
 # 색상
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
 echo "========================================="
 echo "  데이터 파일 서버 업로드 스크립트"
 echo "========================================="
 echo ""
 
-# 프로젝트 루트로 이동 (스크립트 위치 기준)
+# 프로젝트 루트로 이동
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR/.."
 
-# data_repository 확인
-if [ ! -d "data_repository" ]; then
-    echo -e "${RED}ERROR: data_repository 폴더가 없습니다.${NC}"
-    echo "현재 위치: $(pwd)"
-    exit 1
-fi
-
-# 파일 개수 확인
-FILE_COUNT=$(find data_repository -type f | wc -l)
-echo -e "업로드할 파일 수: ${GREEN}${FILE_COUNT}개${NC}"
+# 업로드할 항목 확인
+echo "업로드할 항목:"
+for item in "${UPLOAD_ITEMS[@]}"; do
+    if [ -e "$item" ]; then
+        echo -e "  ${GREEN}✓${NC} $item"
+    else
+        echo -e "  ${RED}✗${NC} $item (없음)"
+    fi
+done
 echo ""
 
 # 확인
@@ -45,25 +51,20 @@ if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
 fi
 
 echo ""
-echo "업로드 중..."
-echo -e "${YELLOW}비밀번호를 입력하세요: remo1234!${NC}"
+echo -e "${YELLOW}비밀번호: remo1234!${NC}"
 echo ""
 
 # SCP 업로드
-scp -P $SERVER_PORT -r ./data_repository $SERVER_USER@$SERVER_HOST:$SERVER_PATH/
+for item in "${UPLOAD_ITEMS[@]}"; do
+    if [ -e "$item" ]; then
+        echo "업로드 중: $item"
+        scp -P $SERVER_PORT -r "./$item" $SERVER_USER@$SERVER_HOST:$SERVER_PATH/
+    fi
+done
 
-if [ $? -eq 0 ]; then
-    echo ""
-    echo -e "${GREEN}=========================================${NC}"
-    echo -e "${GREEN}  업로드 완료!${NC}"
-    echo -e "${GREEN}=========================================${NC}"
-    echo ""
-    echo "다음 단계:"
-    echo "1. GitHub Actions에서 'Initialize Server' 워크플로우 실행"
-    echo "   또는"
-    echo "2. GitHub Actions에서 'Deploy to Server' 워크플로우 실행 (run_etl=yes)"
-else
-    echo ""
-    echo -e "${RED}업로드 실패. 네트워크 연결 및 비밀번호를 확인하세요.${NC}"
-    exit 1
-fi
+echo ""
+echo -e "${GREEN}=========================================${NC}"
+echo -e "${GREEN}  업로드 완료!${NC}"
+echo -e "${GREEN}=========================================${NC}"
+echo ""
+echo "다음 단계: Deploy to Server 워크플로우 실행"
