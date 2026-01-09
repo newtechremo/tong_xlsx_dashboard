@@ -46,8 +46,8 @@ jobs:
             # 포트 3002 사용하는 프로세스 종료
             fuser -k 3002/tcp 2>/dev/null || true
             sleep 2
-            cd backend
-            nohup uvicorn main:app --host 0.0.0.0 --port 3002 > ../backend.log 2>&1 &
+            # 프로젝트 루트에서 PYTHONPATH 설정하여 실행
+            PYTHONPATH=. nohup uvicorn backend.main:app --host 0.0.0.0 --port 3002 > backend.log 2>&1 &
             disown
 
             echo "========== 배포 완료 =========="
