@@ -1,0 +1,53 @@
+name: Initialize Server
+
+on:
+  workflow_dispatch:  # 수동 실행만
+
+jobs:
+  init:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Initialize Server via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          port: ${{ secrets.SERVER_PORT }}
+          username: ${{ secrets.SERVER_USER }}
+          password: ${{ secrets.SERVER_PASSWORD }}
+          script: |
+            echo "========== 서버 초기 설정 시작 =========="
+
+            # 프로젝트 디렉토리 생성
+            mkdir -p /home/finefit-temp/Desktop/project
+            cd /home/finefit-temp/Desktop/project
+
+            # 기존 폴더 확인
+            if [ -d "tong_xlsx_dashboard" ]; then
+              echo "프로젝트 폴더가 이미 존재합니다. 업데이트합니다."
+              cd tong_xlsx_dashboard
+              git pull origin main
+            else
+              echo "프로젝트를 클론합니다."
+              git clone https://github.com/newtechremo/tong_xlsx_dashboard.git
+              cd tong_xlsx_dashboard
+            fi
+
+            # Frontend 의존성 설치
+            echo "Frontend 의존성 설치 중..."
+            npm install
+
+            # Backend Conda 환경 설정
+            echo "Backend Conda 환경 설정 중..."
+            source ~/anaconda3/etc/profile.d/conda.sh
+
+            # conda 환경이 없으면 생성
+            if ! conda env list | grep -q "tong-dashboard"; then
+              echo "Conda 환경 생성 중..."
+              conda create -n tong-dashboard python=3.10 -y
+            fi
+
+            conda activate tong-dashboard
+            pip install -r backend/requirements.txt
+
+            echo "========== 서버 초기 설정 완료 =========="
