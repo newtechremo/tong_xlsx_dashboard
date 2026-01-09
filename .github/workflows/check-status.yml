@@ -1,0 +1,32 @@
+name: Check Server Status
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check Status via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          port: ${{ secrets.SERVER_PORT }}
+          username: ${{ secrets.SERVER_USER }}
+          password: ${{ secrets.SERVER_PASSWORD }}
+          script: |
+            echo "========== 프로세스 상태 =========="
+            ps aux | grep -E "vite|uvicorn|node" | grep -v grep
+
+            echo ""
+            echo "========== 포트 사용 현황 =========="
+            ss -tlnp | grep -E "3001|3002"
+
+            echo ""
+            echo "========== 프로젝트 로그 (Frontend) =========="
+            tail -20 /home/finefit-temp/Desktop/project/tong_xlsx_dashboard/frontend.log 2>/dev/null || echo "로그 없음"
+
+            echo ""
+            echo "========== 프로젝트 로그 (Backend) =========="
+            tail -20 /home/finefit-temp/Desktop/project/tong_xlsx_dashboard/backend.log 2>/dev/null || echo "로그 없음"
