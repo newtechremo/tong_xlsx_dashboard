@@ -1,0 +1,73 @@
+name: Upload Data Files
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_etl:
+        description: 'ETL 실행 여부'
+        required: true
+        default: 'yes'
+        type: choice
+        options:
+          - 'yes'
+          - 'no'
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check for data artifact
+        id: check_artifact
+        run: |
+          echo "========== 데이터 업로드 안내 =========="
+          echo ""
+          echo "GitHub Actions는 로컬 파일에 직접 접근할 수 없습니다."
+          echo "로컬 터미널에서 아래 명령어로 data_repository를 업로드하세요:"
+          echo ""
+          echo "========================================="
+          echo "# Windows (Git Bash / WSL)"
+          echo "scp -P 6201 -r ./data_repository finefit-temp@49.168.236.221:/home/finefit-temp/Desktop/project/tong_xlsx_dashboard/"
+          echo ""
+          echo "# Linux / macOS"
+          echo "scp -P 6201 -r ./data_repository finefit-temp@49.168.236.221:/home/finefit-temp/Desktop/project/tong_xlsx_dashboard/"
+          echo ""
+          echo "비밀번호: remo1234!"
+          echo "========================================="
+
+      - name: Run ETL if requested
+        if: ${{ inputs.run_etl == 'yes' }}
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          port: ${{ secrets.SERVER_PORT }}
+          username: ${{ secrets.SERVER_USER }}
+          password: ${{ secrets.SERVER_PASSWORD }}
+          script: |
+            echo "========== ETL 실행 =========="
+            cd /home/finefit-temp/Desktop/project/tong_xlsx_dashboard
+
+            # data_repository 존재 확인
+            if [ ! -d "data_repository" ]; then
+              echo "ERROR: data_repository 폴더가 없습니다."
+              echo "먼저 로컬에서 SCP로 데이터를 업로드하세요."
+              exit 1
+            fi
+
+            # Conda 환경 활성화
+            source ~/anaconda3/etc/profile.d/conda.sh
+            conda activate tong-dashboard
+
+            # 기존 DB 백업 (있는 경우)
+            if [ -f "backend/database/safety.db" ]; then
+              cp backend/database/safety.db backend/database/safety.db.backup.$(date +%Y%m%d_%H%M%S)
+              echo "기존 DB 백업 완료"
+            fi
+
+            # ETL 실행
+            PYTHONPATH=. python -m backend.etl.run_etl
+
+            echo "========== ETL 완료 =========="
