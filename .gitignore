@@ -31,3 +31,11 @@ backend/database/*.db
 __pycache__/
 *.py[cod]
 .env
+
+# Guide documents & tokens
+*GUIDE*.md
+gh_token.txt
+*.ps1
+
+# Claude Code
+.claude/

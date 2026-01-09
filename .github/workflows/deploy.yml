@@ -1,0 +1,50 @@
+name: Deploy to Server
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:  # 수동 실행 버튼
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy to Server via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          port: ${{ secrets.SERVER_PORT }}
+          username: ${{ secrets.SERVER_USER }}
+          password: ${{ secrets.SERVER_PASSWORD }}
+          script: |
+            echo "========== 배포 시작 =========="
+            cd /home/finefit-temp/Desktop/project/tong_xlsx_dashboard
+
+            echo "1. Git Pull"
+            git pull origin main
+
+            echo "2. Frontend 의존성 설치"
+            npm install
+
+            echo "3. Backend 의존성 설치"
+            source ~/miniconda3/etc/profile.d/conda.sh
+            conda activate tong-dashboard
+            cd backend
+            pip install -r requirements.txt
+            cd ..
+
+            echo "4. Frontend 재시작"
+            pkill -f "node.*vite" || true
+            sleep 2
+            nohup npm run dev > frontend.log 2>&1 &
+
+            echo "5. Backend 재시작"
+            pkill -f "uvicorn.*main:app" || true
+            sleep 2
+            cd backend
+            nohup uvicorn main:app --host 0.0.0.0 --port 3002 > ../backend.log 2>&1 &
+
+            echo "========== 배포 완료 =========="
+            sleep 3
+            ps aux | grep -E "vite|uvicorn" | grep -v grep
